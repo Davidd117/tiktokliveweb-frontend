@@ -25,7 +25,7 @@ input, button { padding:5px; margin:5px; }
 
 <script>
 const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
-const ws = new WebSocket("wss://YOUR_BACKEND_URL_HERE");
+const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -136,3 +136,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
