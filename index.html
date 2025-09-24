@@ -5,16 +5,22 @@
 <title>TikTok Live R/Place</title>
 <style>
   body { background:#111; color:white; text-align:center; font-family:Arial; }
-  #canvasContainer { width:800px; height:800px; margin:20px auto; border:2px solid #444; background:#222; overflow:hidden; cursor:grab; }
+  #canvasContainer {
+    width: 800px;
+    height: 800px;
+    margin: 20px auto;
+    border: 2px solid #444;
+    background: #222;
+    overflow: hidden;
+    cursor: grab;
+  }
   canvas { width:100%; height:100%; display:block; }
   #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin-top:20px; }
   input, button { padding:5px; margin:5px; }
 </style>
 </head>
 <body>
-
 <h2>TikTok Live R/Place</h2>
-
 <div>
   <input id="usernameInput" placeholder="Enter username">
   <button id="getTokenBtn">Get Verification Token</button>
@@ -30,7 +36,6 @@
   <input id="adminKey" placeholder="Admin Key">
   <button id="adminLoginBtn">Login as Admin</button>
 </div>
-
 <div id="adminPanel">
   <h3>Admin Panel</h3>
   <input id="adminUsername" placeholder="Username">
@@ -41,13 +46,11 @@
 </div>
 
 <script>
-// ======= WebSocket URL =======
-// Automatically switch between local and deployed server
-const DEFAULT_WS_URL = "ws://localhost:8765"; // local dev
-const RAILWAY_WS_URL = "wss://YOUR_APP.up.railway.app"; // replace with your Railway app
-const ws = new WebSocket(location.hostname.includes("localhost") ? DEFAULT_WS_URL : RAILWAY_WS_URL);
+const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app"); // <-- replace this
 
-// ======= Canvas Setup =======
+ws.addEventListener("open", ()=>console.log("✅ WebSocket connected"));
+ws.addEventListener("error", e=>console.error("❌ WebSocket error:", e));
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
@@ -56,10 +59,11 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX, lastY;
-let verified=false, currentUser="";
+let dragging = false, lastX, lastY;
+let verified = false;
+let currentUser = "";
 
-function resetView(){
+function resetView() {
   minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
   scale = minScale;
   offsetX = (canvas.width - gridSize*scale)/2;
@@ -67,10 +71,11 @@ function resetView(){
 }
 resetView();
 
-function clampOffsets(){
-  const maxOffsetX=0, maxOffsetY=0;
-  const minOffsetX=canvas.width - gridSize*scale;
-  const minOffsetY=canvas.height - gridSize*scale;
+function clampOffsets() {
+  const maxOffsetX = 0;
+  const maxOffsetY = 0;
+  const minOffsetX = canvas.width - gridSize*scale;
+  const minOffsetY = canvas.height - gridSize*scale;
   if(offsetX>maxOffsetX) offsetX=maxOffsetX;
   if(offsetY>maxOffsetY) offsetY=maxOffsetY;
   if(offsetX<minOffsetX) offsetX=minOffsetX;
@@ -94,33 +99,34 @@ function drawBoard(){
     }
   }
 }
-drawBoard();
 
-// ======= Canvas Zoom/Pan =======
+// Zoom
 canvas.addEventListener("wheel", e=>{
   e.preventDefault();
-  const mx=(e.offsetX-offsetX)/scale, my=(e.offsetY-offsetY)/scale;
-  const zoom = e.deltaY<0?1.1:0.9;
+  const mouseX=(e.offsetX-offsetX)/scale;
+  const mouseY=(e.offsetY-offsetY)/scale;
+  const zoom=e.deltaY<0?1.1:0.9;
   scale*=zoom;
   scale=Math.min(Math.max(scale,minScale),40);
-  offsetX = e.offsetX - mx*scale;
-  offsetY = e.offsetY - my*scale;
+  offsetX=e.offsetX - mouseX*scale;
+  offsetY=e.offsetY - mouseY*scale;
   clampOffsets();
   drawBoard();
 });
 
+// Pan
 canvas.addEventListener("mousedown", e=>{
   if(e.button===1){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing"; e.preventDefault();}
 });
 canvas.addEventListener("mousemove", e=>{
-  if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard();}
+  if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
 });
 canvas.addEventListener("mouseup", e=>{if(e.button===1){dragging=false; canvas.style.cursor="grab";}});
 
-// ======= Place Pixel =======
+// Place pixel
 canvas.addEventListener("click", e=>{
   if(e.button!==0) return;
-  if(!verified){ alert("You are not verified!"); return; }
+  if(!verified) { alert("You are not verified!"); return; }
   const x=Math.floor((e.offsetX-offsetX)/scale);
   const y=Math.floor((e.offsetY-offsetY)/scale);
   if(x>=0 && y>=0 && x<gridSize && y<gridSize){
@@ -128,33 +134,39 @@ canvas.addEventListener("click", e=>{
   }
 });
 
-// ======= User Verification =======
+// User verification
 document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-  const username=document.getElementById("usernameInput").value.trim();
+  const usernameInput=document.getElementById("usernameInput");
+  const username=usernameInput.value.trim();
   if(!username) return alert("Enter username");
   currentUser=username;
   ws.send(JSON.stringify({action:"get_token", username}));
 });
 
-// ======= Admin Login =======
+// Admin login
 document.getElementById("adminLoginBtn").addEventListener("click", ()=>{
   const key=document.getElementById("adminKey").value.trim();
   ws.send(JSON.stringify({action:"admin", key, command:"login_check"}));
 });
 
-// ======= Admin Actions =======
-const sendAdminCommand = cmd=>{
+// Admin buttons
+document.getElementById("banUserBtn").addEventListener("click", ()=>{
   const username=document.getElementById("adminUsername").value.trim();
-  const key=document.getElementById("adminKey").value.trim();
-  ws.send(JSON.stringify({action:"admin", key, command:cmd, username}));
-};
-document.getElementById("banUserBtn").addEventListener("click", ()=>sendAdminCommand("ban"));
-document.getElementById("unbanUserBtn").addEventListener("click", ()=>sendAdminCommand("unban"));
-document.getElementById("removeUserBtn").addEventListener("click", ()=>sendAdminCommand("remove_user"));
-document.getElementById("clearPixelsBtn").addEventListener("click", ()=>sendAdminCommand("clear_pixels"));
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"ban", username}));
+});
+document.getElementById("unbanUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"unban", username}));
+});
+document.getElementById("removeUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"remove_user", username}));
+});
+document.getElementById("clearPixelsBtn").addEventListener("click", ()=>{
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"clear_pixels"}));
+});
 
-// ======= WebSocket Events =======
-ws.addEventListener("open", ()=>console.log("WebSocket connected"));
+// WebSocket messages
 ws.addEventListener("message", e=>{
   const msg=JSON.parse(e.data);
   if(msg.token){
@@ -173,13 +185,12 @@ ws.addEventListener("message", e=>{
   } else if(msg.type==="error"){
     alert(msg.message);
   } else if(msg.type==="admin_ok"){
-    if(msg.message==="login_success"){
-      document.getElementById("adminPanel").style.display="block";
-      document.getElementById("adminAuth").style.display="none";
-      alert("Admin connected!");
-    } else alert(msg.message);
+    if(msg.message==="login_success"){ document.getElementById("adminPanel").style.display="block"; document.getElementById("adminAuth").style.display="none"; alert("Admin connected!"); }
+    else alert(msg.message);
   }
 });
+
+drawBoard();
 </script>
 </body>
 </html>
