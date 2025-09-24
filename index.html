@@ -54,7 +54,8 @@ ws.onmessage = e=>{
   }
 };
 
-// --- Generate token ---
+const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
+
 document.getElementById("getTokenBtn").addEventListener("click", ()=>{
   ws.send(JSON.stringify({action:"get_token", username: currentUser}));
 });
@@ -143,3 +144,4 @@ canvas.addEventListener("click", e=>{
 </script>
 </body>
 </html>
+
