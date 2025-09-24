@@ -50,7 +50,7 @@
 let currentUser = "user_" + Math.floor(Math.random()*1000000); // auto-unique username per session
 let verified = false;
 
-const ws = new WebSocket("wss://your-railway-project.up.railway.app"); // replace with your Railway WebSocket
+const ws = new WebSocket("wss:tiktokliveweb-production.up.railway.app"); // replace with your Railway WebSocket
 ws.onopen = () => console.log("✅ WebSocket connected");
 ws.onmessage = (msg) => {
     const data = JSON.parse(msg.data);
@@ -165,3 +165,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
