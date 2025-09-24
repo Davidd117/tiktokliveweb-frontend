@@ -107,23 +107,38 @@ canvas.addEventListener("click", e=>{
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
 ws.onmessage = e=>{
-    const msg=JSON.parse(e.data);
-    if(msg.type==="token"){
+    const msg = JSON.parse(e.data);
+
+    if(msg.type === "init_pixels"){
+        // Populate the pixels array from server on load
+        for(const idx in msg.pixels){
+            pixels[idx] = 1;
+        }
+        drawBoard();
+    } 
+    else if(msg.type==="token"){
         document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
         document.getElementById("status").textContent="Type this token in TikTok Live to verify";
-    } else if(msg.type==="verified"){
+    } 
+    else if(msg.type==="verified"){
         if(msg.session===currentUser){
             verified=true;
             document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
         }
-    } else if(msg.type==="pixel"){
-        pixels[msg.index]=1; drawBoard();
-    } else if(msg.type==="init_pixels"){
-        for(const idx in msg.pixels) pixels[idx]=1; drawBoard();
-    } else if(msg.type==="clear"){
-        for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard();
-    } else if(msg.type==="error"){
-        alert(msg.message);
+    } 
+    else if(msg.type==="pixel"){
+        pixels[msg.index]=1; 
+        drawBoard();
+    } 
+    else if(msg.type==="clear"){
+        for(let i=0;i<pixels.length;i++) pixels[i]=0; 
+        drawBoard();
+    } 
+    else if(msg.type==="error"){
+        // Only show error to this session (prevents broadcast to all)
+        if(msg.session === undefined || msg.session === currentUser){
+            alert(msg.message);
+        }
     }
 };
 
