@@ -26,7 +26,7 @@ input,button { padding:5px; margin:5px; }
 <script>
 const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
 
-const ws = new WebSocket("wss://your-backend-url"); // Replace with your backend
+const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app"); // Replace with your backend
 ws.onopen = () => console.log("✅ WebSocket connected!");
 ws.onmessage = (msg) => console.log("Server:", msg.data);
 
@@ -133,3 +133,4 @@ ws.addEventListener("message", e=>{
 </script>
 </body>
 </html>
+
