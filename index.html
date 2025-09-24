@@ -15,53 +15,56 @@
     cursor: grab;
   }
   canvas { width:100%; height:100%; display:block; }
-
-  #adminPanel {
-    display:none;
-    position:fixed;
-    top:10px; right:10px;
-    background:#222; border:2px solid #4ce0ff;
-    padding:10px; z-index:10;
-  }
-  input, button { margin:3px; }
+  #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin-top:20px; }
+  input, button { padding:5px; margin:5px; }
 </style>
 </head>
 <body>
 <h2>TikTok Live R/Place</h2>
+<div>
+  <input id="usernameInput" placeholder="Enter username">
+  <button id="getTokenBtn">Get Verification Token</button>
+</div>
+<div id="tokenDisplay"></div>
+<div id="status">Not verified</div>
+
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
 </div>
 
+<div id="adminAuth">
+  <input id="adminKey" placeholder="Admin Key">
+  <button id="adminLoginBtn">Login as Admin</button>
+</div>
 <div id="adminPanel">
   <h3>Admin Panel</h3>
-  <input type="password" id="adminKey" placeholder="Admin Key">
-  <button id="connectAdmin">Connect</button>
-  <div id="adminControls" style="margin-top:10px; display:none;">
-    <input id="adminUsername" placeholder="Username">
-    <button id="banUser">Ban</button>
-    <button id="unbanUser">Unban</button>
-    <button id="removeUser">Remove Verified</button>
-    <button id="clearPixels">Clear Board</button>
-  </div>
-  <div id="adminStatus"></div>
+  <input id="adminUsername" placeholder="Username">
+  <button id="banUserBtn">Ban User</button>
+  <button id="unbanUserBtn">Unban User</button>
+  <button id="removeUserBtn">Remove Verified User</button>
+  <button id="clearPixelsBtn">Clear Board</button>
 </div>
 
 <script>
+const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
+
+// Canvas setup
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
-const pixels = new Uint8Array(gridSize * gridSize);
+const pixels = new Uint8Array(gridSize*gridSize);
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 // Camera
 let scale, minScale, offsetX, offsetY;
 let dragging = false, lastX, lastY;
-let verified = false;  // user verification status
-let username = prompt("Enter your TikTok username:");
+let verified = false;
+let currentUser = "";
 
+// Fit-to-screen
 function resetView() {
-  minScale = Math.min(canvas.width / gridSize, canvas.height / gridSize);
+  minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
   scale = minScale;
   offsetX = (canvas.width - gridSize*scale)/2;
   offsetY = (canvas.height - gridSize*scale)/2;
@@ -69,97 +72,126 @@ function resetView() {
 resetView();
 
 function clampOffsets() {
-  const maxX=0, maxY=0, minX=canvas.width-gridSize*scale, minY=canvas.height-gridSize*scale;
-  offsetX=Math.min(maxX, Math.max(minX, offsetX));
-  offsetY=Math.min(maxY, Math.max(minY, offsetY));
+  const maxOffsetX = 0;
+  const maxOffsetY = 0;
+  const minOffsetX = canvas.width - gridSize*scale;
+  const minOffsetY = canvas.height - gridSize*scale;
+  if(offsetX>maxOffsetX) offsetX=maxOffsetX;
+  if(offsetY>maxOffsetY) offsetY=maxOffsetY;
+  if(offsetX<minOffsetX) offsetX=minOffsetX;
+  if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
 
-function drawBoard() {
+function drawBoard(){
   ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
   ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-  ctx.fillStyle="#222";
-  ctx.fillRect(0,0,gridSize,gridSize);
-
+  ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
   if(scale>4){
-    ctx.strokeStyle="#333";
-    ctx.lineWidth=0.05;
+    ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
     for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
     for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
   }
-
   for(let i=0;i<pixels.length;i++){
     if(pixels[i]){
-      const x=i%gridSize;
-      const y=Math.floor(i/gridSize);
+      const x=i%gridSize, y=Math.floor(i/gridSize);
       ctx.fillStyle="#4ce0ff";
       ctx.fillRect(x,y,1,1);
     }
   }
 }
 
-// --- WebSocket ---
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app"); // <- update
-ws.onopen = ()=>console.log("✅ WebSocket connected");
-ws.onmessage = e=>{
-  const msg=JSON.parse(e.data);
-  if(msg.type==="pixel") pixels[msg.index]=1;
-  if(msg.type==="verified" && msg.user===username) verified=true;
-  if(msg.type==="clear") pixels.fill(0);
-  drawBoard();
-};
-
 // --- Zoom ---
-canvas.addEventListener("wheel",e=>{
+canvas.addEventListener("wheel", e=>{
   e.preventDefault();
-  const mx=(e.offsetX-offsetX)/scale;
-  const my=(e.offsetY-offsetY)/scale;
+  const mouseX=(e.offsetX-offsetX)/scale;
+  const mouseY=(e.offsetY-offsetY)/scale;
   const zoom=e.deltaY<0?1.1:0.9;
   scale*=zoom;
   scale=Math.min(Math.max(scale,minScale),40);
-  offsetX=e.offsetX-mx*scale;
-  offsetY=e.offsetY-my*scale;
+  offsetX=e.offsetX - mouseX*scale;
+  offsetY=e.offsetY - mouseY*scale;
   clampOffsets();
   drawBoard();
 });
 
 // --- Pan ---
-canvas.addEventListener("mousedown",e=>{if(e.button===1){dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.style.cursor="grabbing";e.preventDefault();}});
-canvas.addEventListener("mousemove",e=>{if(dragging){offsetX+=e.clientX-lastX;offsetY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;clampOffsets();drawBoard();}});
-canvas.addEventListener("mouseup",e=>{if(e.button===1){dragging=false;canvas.style.cursor="grab";}});
+canvas.addEventListener("mousedown", e=>{
+  if(e.button===1){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing"; e.preventDefault();}
+});
+canvas.addEventListener("mousemove", e=>{
+  if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
+});
+canvas.addEventListener("mouseup", e=>{if(e.button===1){dragging=false; canvas.style.cursor="grab";}});
 
 // --- Place pixel ---
-canvas.addEventListener("click",e=>{
+canvas.addEventListener("click", e=>{
   if(e.button!==0) return;
-  if(!verified){alert("You must be verified to place pixels!"); return;}
+  if(!verified) { alert("You are not verified!"); return; }
   const x=Math.floor((e.offsetX-offsetX)/scale);
   const y=Math.floor((e.offsetY-offsetY)/scale);
-  if(x>=0&&y>=0&&x<gridSize&&y<gridSize){
-    const index=y*gridSize+x;
-    ws.send(JSON.stringify({action:"place_pixel",username:index, index:index}));
+  if(x>=0 && y>=0 && x<gridSize && y<gridSize){
+    ws.send(JSON.stringify({action:"place_pixel", username:currentUser, index:x+y*gridSize}));
+  }
+});
+
+// --- User verification ---
+document.getElementById("getTokenBtn").addEventListener("click", ()=>{
+  const usernameInput=document.getElementById("usernameInput");
+  const username=usernameInput.value.trim();
+  if(!username) return alert("Enter username");
+  currentUser=username;
+  ws.send(JSON.stringify({action:"get_token", username}));
+});
+
+// --- Admin login ---
+document.getElementById("adminLoginBtn").addEventListener("click", ()=>{
+  const key=document.getElementById("adminKey").value.trim();
+  ws.send(JSON.stringify({action:"admin", key, command:"login_check"}));
+});
+
+// --- Admin buttons ---
+document.getElementById("banUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"ban", username}));
+});
+document.getElementById("unbanUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"unban", username}));
+});
+document.getElementById("removeUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"remove_user", username}));
+});
+document.getElementById("clearPixelsBtn").addEventListener("click", ()=>{
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"clear_pixels"}));
+});
+
+// --- WebSocket ---
+ws.addEventListener("open", ()=>console.log("WebSocket connected"));
+ws.addEventListener("message", e=>{
+  const msg=JSON.parse(e.data);
+  if(msg.token){
+    document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
+    document.getElementById("status").textContent="Type this token in TikTok Live to verify";
+  } else if(msg.type==="verified"){
+    verified=true; currentUser=msg.user;
+    document.getElementById("status").textContent=currentUser+" VERIFIED! You can place 1 pixel";
+  } else if(msg.type==="pixel"){
+    const i=msg.index; pixels[i]=1; drawBoard();
+  } else if(msg.type==="already_verified"){
+    verified=true; currentUser=msg.user;
+    document.getElementById("status").textContent=currentUser+" already verified!";
+  } else if(msg.type==="clear"){
+    for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard();
+  } else if(msg.type==="error"){
+    alert(msg.message);
+  } else if(msg.type==="admin_ok"){
+    if(msg.message==="login_success"){ document.getElementById("adminPanel").style.display="block"; document.getElementById("adminAuth").style.display="none"; alert("Admin connected!"); }
+    else alert(msg.message);
   }
 });
 
 drawBoard();
-
-// --- Admin Panel ---
-const panel=document.getElementById("adminPanel");
-const controls=document.getElementById("adminControls");
-const status=document.getElementById("adminStatus");
-document.getElementById("connectAdmin").onclick=()=>{
-  const key=document.getElementById("adminKey").value;
-  ws.send(JSON.stringify({action:"admin",key:key,command:"check"}));
-  // We'll handle response from server to show controls
-  ws.onmessage=e=>{
-    const msg=JSON.parse(e.data);
-    if(msg.type==="admin_ok"){controls.style.display="block";status.textContent=msg.message;}
-    if(msg.type==="error"){status.textContent=msg.message;}
-  }
-};
-document.getElementById("banUser").onclick=()=>ws.send(JSON.stringify({action:"admin",key:document.getElementById("adminKey").value,command:"ban",username:document.getElementById("adminUsername").value}));
-document.getElementById("unbanUser").onclick=()=>ws.send(JSON.stringify({action:"admin",key:document.getElementById("adminKey").value,command:"unban",username:document.getElementById("adminUsername").value}));
-document.getElementById("removeUser").onclick=()=>ws.send(JSON.stringify({action:"admin",key:document.getElementById("adminKey").value,command:"remove_user",username:document.getElementById("adminUsername").value}));
-document.getElementById("clearPixels").onclick=()=>ws.send(JSON.stringify({action:"admin",key:document.getElementById("adminKey").value,command:"clear_pixels"}));
 </script>
 </body>
 </html>
-
