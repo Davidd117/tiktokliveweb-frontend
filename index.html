@@ -5,62 +5,84 @@
 <title>TikTok Live R/Place</title>
 <style>
   body { background:#111; color:white; text-align:center; font-family:Arial; }
-  #canvasContainer { width:800px; height:800px; margin:20px auto; border:2px solid #444; background:#222; overflow:hidden; cursor:grab; }
+  #canvasContainer {
+    width: 800px;
+    height: 800px;
+    margin: 20px auto;
+    border: 2px solid #444;
+    background: #222;
+    overflow: hidden;
+    cursor: grab;
+  }
   canvas { width:100%; height:100%; display:block; }
-  #tokenDisplay { margin:10px; font-size:18px; color:#4ce0ff; }
+  #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin-top:20px; }
+  input, button { padding:5px; margin:5px; }
 </style>
 </head>
 <body>
 <h2>TikTok Live R/Place</h2>
-<button id="getTokenBtn">Generate Verification Token</button>
-<div id="tokenDisplay"></div>
+
+<div>
+  <button id="getTokenBtn">Generate Verification Token</button>
+</div>
+<div id="tokenDisplay">Token will appear here</div>
 <div id="status">Not verified</div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
 </div>
 
+<div id="adminAuth">
+  <input id="adminKey" placeholder="Admin Key">
+  <button id="adminLoginBtn">Login as Admin</button>
+</div>
+<div id="adminPanel">
+  <h3>Admin Panel</h3>
+  <input id="adminUsername" placeholder="Username">
+  <button id="banUserBtn">Ban User</button>
+  <button id="unbanUserBtn">Unban User</button>
+  <button id="removeUserBtn">Remove Verified User</button>
+  <button id="clearPixelsBtn">Clear Board</button>
+</div>
+
 <script>
-// --- WebSocket ---
-const ws = new WebSocket("wss://your-railway-project.up.railway.app"); // <- replace with your ws url
-
-let verified = false;
-let currentUser = crypto.randomUUID(); // unique per browser tab/session
-let currentToken = "";
-
-ws.onopen = ()=>console.log("✅ WebSocket connected");
-ws.onclose = ()=>console.log("❌ WebSocket closed");
-ws.onerror = e=>console.error("❌ WebSocket error:", e);
-
-ws.onmessage = e=>{
-  const msg = JSON.parse(e.data);
-  if(msg.type==="token" || msg.token){
-    currentToken = msg.token;
-    document.getElementById("tokenDisplay").textContent="Your token: "+currentToken;
-    document.getElementById("status").textContent="Type this token in TikTok Live to verify";
-    console.log("[Server] Token generated:", currentToken);
-  } else if(msg.type==="verified"){
-    verified=true;
-    document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
-  } else if(msg.type==="pixel"){
-    const i=msg.index; pixels[i]=1; drawBoard();
-  } else if(msg.type==="already_verified"){
-    verified=true;
-    document.getElementById("status").textContent="Already verified!";
-  } else if(msg.type==="clear"){
-    for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard();
-  } else if(msg.type==="error"){
-    alert(msg.message);
-  }
-};
-
+// Generate a unique session ID per browser/tab
 const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
 
+const ws = new WebSocket("wss://your-railway-project.up.railway.app");
+ws.onopen = () => console.log("✅ WebSocket connected!");
+ws.onmessage = (msg) => console.log("Server:", msg.data);
+ws.onerror = (e) => console.error("❌ WebSocket error:", e);
+
+// Send get_token action
 document.getElementById("getTokenBtn").addEventListener("click", ()=>{
   ws.send(JSON.stringify({action:"get_token", username: currentUser}));
 });
 
-// --- Canvas setup ---
+// Admin login
+document.getElementById("adminLoginBtn").addEventListener("click", ()=>{
+  const key=document.getElementById("adminKey").value.trim();
+  ws.send(JSON.stringify({action:"admin", key, command:"login_check"}));
+});
+
+// Admin buttons
+document.getElementById("banUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"ban", username}));
+});
+document.getElementById("unbanUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"unban", username}));
+});
+document.getElementById("removeUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"remove_user", username}));
+});
+document.getElementById("clearPixelsBtn").addEventListener("click", ()=>{
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"clear_pixels"}));
+});
+
+// Canvas setup
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
@@ -69,20 +91,22 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX, lastY;
+let dragging = false, lastX, lastY;
+let verified = false;
 
 function resetView() {
-  minScale=Math.min(canvas.width/gridSize, canvas.height/gridSize);
-  scale=minScale;
-  offsetX=(canvas.width - gridSize*scale)/2;
-  offsetY=(canvas.height - gridSize*scale)/2;
+  minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
+  scale = minScale;
+  offsetX = (canvas.width - gridSize*scale)/2;
+  offsetY = (canvas.height - gridSize*scale)/2;
 }
 resetView();
 
 function clampOffsets() {
-  const maxOffsetX=0, maxOffsetY=0;
-  const minOffsetX=canvas.width - gridSize*scale;
-  const minOffsetY=canvas.height - gridSize*scale;
+  const maxOffsetX = 0;
+  const maxOffsetY = 0;
+  const minOffsetX = canvas.width - gridSize*scale;
+  const minOffsetY = canvas.height - gridSize*scale;
   if(offsetX>maxOffsetX) offsetX=maxOffsetX;
   if(offsetY>maxOffsetY) offsetY=maxOffsetY;
   if(offsetX<minOffsetX) offsetX=minOffsetX;
@@ -106,7 +130,6 @@ function drawBoard(){
     }
   }
 }
-drawBoard();
 
 // Zoom
 canvas.addEventListener("wheel", e=>{
@@ -127,21 +150,50 @@ canvas.addEventListener("mousedown", e=>{
   if(e.button===1){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing"; e.preventDefault();}
 });
 canvas.addEventListener("mousemove", e=>{
-  if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard();}
+  if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
 });
 canvas.addEventListener("mouseup", e=>{if(e.button===1){dragging=false; canvas.style.cursor="grab";}});
 
 // Place pixel
 canvas.addEventListener("click", e=>{
   if(e.button!==0) return;
-  if(!verified){ alert("You are not verified!"); return; }
+  if(!verified) { alert("You are not verified!"); return; }
   const x=Math.floor((e.offsetX-offsetX)/scale);
   const y=Math.floor((e.offsetY-offsetY)/scale);
   if(x>=0 && y>=0 && x<gridSize && y<gridSize){
     ws.send(JSON.stringify({action:"place_pixel", username:currentUser, index:x+y*gridSize}));
   }
 });
+
+// WebSocket messages
+ws.addEventListener("message", e=>{
+  const msg=JSON.parse(e.data);
+  if(msg.type==="token"){
+    document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
+    document.getElementById("status").textContent="Type this token in TikTok Live to verify";
+    console.log("[Token generated]", msg.token);
+  } else if(msg.type==="verified"){
+    verified=true;
+    document.getElementById("status").textContent=currentUser+" VERIFIED! You can place 1 pixel";
+  } else if(msg.type==="pixel"){
+    const i=msg.index; pixels[i]=1; drawBoard();
+  } else if(msg.type==="already_verified"){
+    verified=true;
+    document.getElementById("status").textContent=currentUser+" already verified!";
+  } else if(msg.type==="clear"){
+    for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard();
+  } else if(msg.type==="error"){
+    alert(msg.message);
+  } else if(msg.type==="admin_ok"){
+    if(msg.message==="login_success"){
+      document.getElementById("adminPanel").style.display="block";
+      document.getElementById("adminAuth").style.display="none";
+      alert("Admin connected!");
+    } else alert(msg.message);
+  }
+});
+
+drawBoard();
 </script>
 </body>
 </html>
-
