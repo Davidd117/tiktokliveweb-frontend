@@ -25,7 +25,7 @@
 <div>
   <button id="getTokenBtn">Generate Verification Token</button>
 </div>
-<div id="tokenDisplay"></div>
+<div id="tokenDisplay">Token will appear here</div>
 <div id="status">Not verified</div>
 
 <div id="canvasContainer">
@@ -36,7 +36,6 @@
   <input id="adminKey" placeholder="Admin Key">
   <button id="adminLoginBtn">Login as Admin</button>
 </div>
-
 <div id="adminPanel">
   <h3>Admin Panel</h3>
   <input id="adminUsername" placeholder="Username">
@@ -47,40 +46,40 @@
 </div>
 
 <script>
-let currentUser = "user_" + Math.floor(Math.random()*1000000); // auto-unique username per session
-let verified = false;
+// Generate a unique session ID per browser/tab
+const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
 
-const ws = new WebSocket("wss:tiktokliveweb-production.up.railway.app"); // replace with your Railway WebSocket
-ws.onopen = () => console.log("✅ WebSocket connected");
-ws.onmessage = (msg) => {
-    const data = JSON.parse(msg.data);
-    if(data.type === "token") {
-        document.getElementById("tokenDisplay").textContent = "Your token: " + data.token;
-        document.getElementById("status").textContent = "Type this token in TikTok Live to verify";
-        console.log("[Client] Token received:", data.token);
-    } else if(data.type === "verified") {
-        if(data.user === currentUser) verified = true;
-        document.getElementById("status").textContent = data.user + " VERIFIED! You can place 1 pixel";
-    } else if(data.type === "pixel") {
-        const i = data.index; pixels[i] = 1; drawBoard();
-    } else if(data.type === "already_verified") {
-        if(data.user === currentUser) verified = true;
-        document.getElementById("status").textContent = data.user + " already verified!";
-    } else if(data.type === "clear") {
-        for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard();
-    } else if(data.type === "error") {
-        alert(data.message);
-    } else if(data.type === "admin_ok") {
-        if(data.message === "login_success") {
-            document.getElementById("adminPanel").style.display="block";
-            document.getElementById("adminAuth").style.display="none";
-            alert("Admin connected!");
-        } else alert(data.message);
-    }
+const ws = new WebSocket("wss://your-railway-project.up.railway.app");
+ws.onopen = () => console.log("✅ WebSocket connected!");
+ws.onmessage = (msg) => console.log("Server:", msg.data);
+ws.onerror = (e) => console.error("❌ WebSocket error:", e);
+
+// Send get_token action
+document.getElementById("getTokenBtn").addEventListener("click", ()=>{
+  ws.send(JSON.stringify({action:"get_token", username: currentUser}));
 });
 
-document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"get_token", username: currentUser}));
+// Admin login
+document.getElementById("adminLoginBtn").addEventListener("click", ()=>{
+  const key=document.getElementById("adminKey").value.trim();
+  ws.send(JSON.stringify({action:"admin", key, command:"login_check"}));
+});
+
+// Admin buttons
+document.getElementById("banUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"ban", username}));
+});
+document.getElementById("unbanUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"unban", username}));
+});
+document.getElementById("removeUserBtn").addEventListener("click", ()=>{
+  const username=document.getElementById("adminUsername").value.trim();
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"remove_user", username}));
+});
+document.getElementById("clearPixelsBtn").addEventListener("click", ()=>{
+  ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKey").value.trim(), command:"clear_pixels"}));
 });
 
 // Canvas setup
@@ -92,7 +91,8 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX, lastY;
+let dragging = false, lastX, lastY;
+let verified = false;
 
 function resetView() {
   minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
@@ -103,7 +103,8 @@ function resetView() {
 resetView();
 
 function clampOffsets() {
-  const maxOffsetX = 0, maxOffsetY=0;
+  const maxOffsetX = 0;
+  const maxOffsetY = 0;
   const minOffsetX = canvas.width - gridSize*scale;
   const minOffsetY = canvas.height - gridSize*scale;
   if(offsetX>maxOffsetX) offsetX=maxOffsetX;
@@ -130,6 +131,7 @@ function drawBoard(){
   }
 }
 
+// Zoom
 canvas.addEventListener("wheel", e=>{
   e.preventDefault();
   const mouseX=(e.offsetX-offsetX)/scale;
@@ -143,6 +145,7 @@ canvas.addEventListener("wheel", e=>{
   drawBoard();
 });
 
+// Pan
 canvas.addEventListener("mousedown", e=>{
   if(e.button===1){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing"; e.preventDefault();}
 });
@@ -151,6 +154,7 @@ canvas.addEventListener("mousemove", e=>{
 });
 canvas.addEventListener("mouseup", e=>{if(e.button===1){dragging=false; canvas.style.cursor="grab";}});
 
+// Place pixel
 canvas.addEventListener("click", e=>{
   if(e.button!==0) return;
   if(!verified) { alert("You are not verified!"); return; }
@@ -161,8 +165,35 @@ canvas.addEventListener("click", e=>{
   }
 });
 
+// WebSocket messages
+ws.addEventListener("message", e=>{
+  const msg=JSON.parse(e.data);
+  if(msg.type==="token"){
+    document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
+    document.getElementById("status").textContent="Type this token in TikTok Live to verify";
+    console.log("[Token generated]", msg.token);
+  } else if(msg.type==="verified"){
+    verified=true;
+    document.getElementById("status").textContent=currentUser+" VERIFIED! You can place 1 pixel";
+  } else if(msg.type==="pixel"){
+    const i=msg.index; pixels[i]=1; drawBoard();
+  } else if(msg.type==="already_verified"){
+    verified=true;
+    document.getElementById("status").textContent=currentUser+" already verified!";
+  } else if(msg.type==="clear"){
+    for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard();
+  } else if(msg.type==="error"){
+    alert(msg.message);
+  } else if(msg.type==="admin_ok"){
+    if(msg.message==="login_success"){
+      document.getElementById("adminPanel").style.display="block";
+      document.getElementById("adminAuth").style.display="none";
+      alert("Admin connected!");
+    } else alert(msg.message);
+  }
+});
+
 drawBoard();
 </script>
 </body>
 </html>
-
