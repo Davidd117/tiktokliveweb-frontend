@@ -98,7 +98,7 @@ function drawBoard() {
 }
 
 // --- WebSocket ---
-const ws = new WebSocket("wss://YOUR_RAILWAY_APP.up.railway.app"); // <- update
+const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app"); // <- update
 ws.onopen = ()=>console.log("✅ WebSocket connected");
 ws.onmessage = e=>{
   const msg=JSON.parse(e.data);
@@ -162,3 +162,4 @@ document.getElementById("clearPixels").onclick=()=>ws.send(JSON.stringify({actio
 </script>
 </body>
 </html>
+
