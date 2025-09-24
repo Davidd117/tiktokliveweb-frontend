@@ -46,7 +46,14 @@
 </div>
 
 <script>
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app"); // <-- replace this
+const ws = new WebSocket("wss://your-railway-project.up.railway.app");
+ws.onopen = () => console.log("Connected!");
+ws.onmessage = (msg) => console.log("Server:", msg.data);
+
+function getToken(username) {
+    ws.send(JSON.stringify({action:"get_token", username:username}));
+}
+
 
 ws.addEventListener("open", ()=>console.log("✅ WebSocket connected"));
 ws.addEventListener("error", e=>console.error("❌ WebSocket error:", e));
@@ -194,3 +201,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
