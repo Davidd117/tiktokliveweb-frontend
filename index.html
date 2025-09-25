@@ -166,13 +166,15 @@ function drawBoard(){
         for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
         for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
     }
-    for(let i=0;i<pixels.length;i++){
-        if(pixels[i]){
-            const x=i%gridSize, y=Math.floor(i/gridSize);
-            ctx.fillStyle=pixels[i]; // now pixels hold color hex
-            ctx.fillRect(x,y,1,1);
-        }
+    for (const idx in pixels) {
+        const p = pixels[idx];
+        if (!p) continue;
+        const x = idx % gridSize;
+        const y = Math.floor(idx / gridSize);
+        ctx.fillStyle = p.color;  // ✅ use color
+        ctx.fillRect(x, y, 1, 1);
     }
+
 }
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
@@ -267,13 +269,13 @@ ws.onmessage = e=>{
             document.getElementById("palette-panel").style.display="block"; // 🎨 show palette
         }
     }
-    else if(msg.type==="init_pixels"){
-        pixels = {};
-        for(const idx in msg.pixels){
-            pixels[idx] = msg.pixels[idx].color;
+    else if (msg.type === "init_pixels") {
+        pixels = {}; // reset
+        for (const idx in msg.pixels) {
+            pixels[idx] = msg.pixels[idx]; // already {user, color}
         }
         drawBoard();
-}
+    }
     else if(msg.type==="pixel"){
         pixels[msg.index]=msg.color; // store color hex
         if(msg.session===currentSession){ pixelsLeft = Math.max(0,pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
