@@ -8,7 +8,7 @@ body { background:#111; color:white; text-align:center; font-family:Arial; }
 #canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
 canvas { width:100%; height:100%; display:block; }
 input, button { padding:5px; margin:5px; }
-#info { margin-top:10px; }
+#userInfo { margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -18,7 +18,8 @@ input, button { padding:5px; margin:5px; }
   <button id="getTokenBtn">Generate Verification Token</button>
 </div>
 <div id="tokenDisplay">Token will appear here</div>
-<div id="info">Not verified</div>
+<div id="status">Not verified</div>
+<div id="userInfo"></div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -39,8 +40,7 @@ let scale, minScale, offsetX, offsetY;
 let dragging = false, lastX, lastY;
 let verified = false;
 let pixelsLeft = 0;
-let nextPixelTime = 0;
-let username = "";
+let nextPixelTime = null;
 
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
@@ -101,11 +101,7 @@ canvas.addEventListener("mouseup", e=>{dragging=false; canvas.style.cursor="grab
 // --- Place pixel ---
 canvas.addEventListener("click", e=>{
     if(!verified) { alert("You are not verified!"); return; }
-    const now = Date.now() / 1000;
-    if(pixelsLeft <= 0 && now < nextPixelTime){
-        alert(`Cooldown active. Wait ${Math.ceil(nextPixelTime-now)} sec`);
-        return;
-    }
+    if(pixelsLeft <= 0) { alert("No pixels available! Wait for cooldown."); return; }
     const x=Math.floor((e.offsetX-offsetX)/scale);
     const y=Math.floor((e.offsetY-offsetY)/scale);
     if(x>=0 && y>=0 && x<gridSize && y<gridSize){
@@ -113,18 +109,16 @@ canvas.addEventListener("click", e=>{
     }
 });
 
-// --- Update info display ---
-function updateInfo(){
-    if(verified){
-        const now = Date.now()/1000;
-        let cd = 0;
-        if(pixelsLeft <= 0 && nextPixelTime>now){
-            cd = Math.ceil(nextPixelTime - now);
-        }
-        document.getElementById("info").textContent = 
-            `User: ${username} | Pixels left: ${pixelsLeft} | Next pixel in: ${cd}s`;
-    }
+// --- Update user info display ---
+function updateUserInfo(){
+    const infoDiv = document.getElementById("userInfo");
+    let timeLeft = 0;
+    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    infoDiv.textContent = `User: ${currentUser} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
 }
+
+// --- Countdown timer ---
+setInterval(updateUserInfo, 1000);
 
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
@@ -132,40 +126,38 @@ ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
 
     if(msg.type === "init_pixels"){
-        for(const idx in msg.pixels){ pixels[idx] = 1; }
+        for(const idx in msg.pixels){ pixels[idx]=1; }
         drawBoard();
-    } 
+    }
     else if(msg.type==="token"){
         document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
-        document.getElementById("info").textContent="Type this token in TikTok Live to verify";
-    } 
+        document.getElementById("status").textContent="Type this token in TikTok Live to verify";
+    }
     else if(msg.type==="verified"){
         if(msg.session===currentUser){
             verified=true;
-            username = msg.username;
             pixelsLeft = 1;
-            nextPixelTime = 0;
+            nextPixelTime = null;
+            document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
         }
-    } 
+    }
     else if(msg.type==="pixel"){
-        pixels[msg.index]=1; 
-        drawBoard();
-        // If this pixel belongs to current user, update pixels left
+        pixels[msg.index]=1;
         if(msg.session === currentUser){
-            pixelsLeft -= 1;
-            nextPixelTime = msg.next_pixel_time || (Date.now()/1000 + 600);
+            pixelsLeft = Math.max(0, pixelsLeft-1);
+            nextPixelTime = Date.now()/1000 + 10*60; // reset cooldown locally
         }
-    } 
-    else if(msg.type==="clear"){
-        for(let i=0;i<pixels.length;i++) pixels[i]=0; 
         drawBoard();
-    } 
+    }
+    else if(msg.type==="info"){
+        if(msg.session === currentUser){
+            pixelsLeft = msg.pixels_left;
+            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : null;
+        }
+    }
     else if(msg.type==="error"){
         if(msg.session === undefined || msg.session === currentUser){
             alert(msg.message);
-            // If user info sent, update
-            if(msg.username){ username = msg.username; }
-            if(msg.pixels_left!==undefined){ pixelsLeft = msg.pixels_left; }
         }
     }
 };
@@ -174,9 +166,6 @@ ws.onmessage = e=>{
 document.getElementById("getTokenBtn").addEventListener("click", ()=>{
     ws.send(JSON.stringify({action:"get_token", session:currentUser}));
 });
-
-// --- Timer update ---
-setInterval(updateInfo, 1000);
 
 drawBoard();
 </script>
