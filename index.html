@@ -41,7 +41,7 @@ let dragging = false, lastX, lastY;
 let verified = false;
 let pixelsLeft = 0;
 let nextPixelTime = null; // in seconds (unix timestamp)
-const cooldown = 10*60;   // 10 minutes
+const cooldown = 5;   // 10 minutes
 
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
@@ -181,3 +181,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
