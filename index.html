@@ -267,6 +267,13 @@ ws.onmessage = e=>{
             document.getElementById("palette-panel").style.display="block"; // 🎨 show palette
         }
     }
+    else if(msg.type==="init_pixels"){
+        pixels = {};
+        for(const idx in msg.pixels){
+            pixels[idx] = msg.pixels[idx].color;
+        }
+        drawBoard();
+}
     else if(msg.type==="pixel"){
         pixels[msg.index]=msg.color; // store color hex
         if(msg.session===currentSession){ pixelsLeft = Math.max(0,pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
