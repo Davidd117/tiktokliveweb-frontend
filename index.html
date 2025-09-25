@@ -7,7 +7,7 @@
 body { background:#111; color:white; text-align:center; font-family:Arial; }
 #canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
 canvas { width:100%; height:100%; display:block; }
-input, button { padding:5px; margin:5px; }
+button { padding:5px; margin:5px; }
 #userInfo { margin-top: 10px; }
 </style>
 </head>
@@ -18,10 +18,6 @@ input, button { padding:5px; margin:5px; }
   <button id="getTokenBtn">Generate Verification Token</button>
 </div>
 <div id="tokenDisplay">Token will appear here</div>
-<div>
-  <input type="text" id="tokenInput" placeholder="Enter token from TikTok">
-  <button id="verifyBtn">Verify</button>
-</div>
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
 
@@ -30,8 +26,8 @@ input, button { padding:5px; margin:5px; }
 </div>
 
 <script>
-const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
+const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
+const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app"); // replace with your server
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -41,13 +37,9 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging = false, lastX, lastY;
-let verified = false;
-let pixelsLeft = 0;
-let nextPixelTime = null;
-let countdownInterval = null;
+let dragging=false,lastX,lastY;
+let verified=false, username=null, pixelsLeft=0, nextPixelTime=null;
 
-// --- View setup ---
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
@@ -57,7 +49,7 @@ function resetView(){
 resetView();
 
 function clampOffsets(){
-    const maxOffsetX = 0, maxOffsetY=0;
+    const maxOffsetX=0,maxOffsetY=0;
     const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
     if(offsetX>maxOffsetX) offsetX=maxOffsetX;
     if(offsetY>maxOffsetY) offsetY=maxOffsetY;
@@ -111,36 +103,40 @@ canvas.addEventListener("click", e=>{
     const x=Math.floor((e.offsetX-offsetX)/scale);
     const y=Math.floor((e.offsetY-offsetY)/scale);
     if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-        ws.send(JSON.stringify({action:"place_pixel", session:currentUser, index:x+y*gridSize}));
+        ws.send(JSON.stringify({action:"place_pixel", session:currentSession}));
     }
 });
 
-// --- Update user info display ---
+// --- Update user info ---
 function updateUserInfo(){
     const infoDiv = document.getElementById("userInfo");
-    let timeLeft = 0;
-    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
-    infoDiv.textContent = `User: ${currentUser} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
+    let timeLeft=0;
+    if(nextPixelTime) timeLeft=Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    if(verified){
+        infoDiv.textContent=`User: ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
+    } else {
+        infoDiv.textContent="Not verified";
+    }
 }
 
-// --- Countdown timer ---
-function startCountdown(){
-    if(countdownInterval) clearInterval(countdownInterval);
-    countdownInterval = setInterval(()=>{
-        if(nextPixelTime && Date.now()/1000 >= nextPixelTime){
-            pixelsLeft += 1;
-            nextPixelTime = Date.now()/1000 + 10; // example cooldown
+// --- Countdown ---
+setInterval(()=>{
+    if(verified && nextPixelTime){
+        const now = Date.now()/1000;
+        if(now >= nextPixelTime){
+            pixelsLeft++;
+            nextPixelTime = now + 5; // server cooldown, adjust as needed
         }
-        updateUserInfo();
-    }, 1000);
-}
+    }
+    updateUserInfo();
+}, 1000);
 
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
 ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
 
-    if(msg.type === "init_pixels"){
+    if(msg.type==="init_pixels"){
         for(const idx in msg.pixels){ pixels[idx]=1; }
         drawBoard();
     }
@@ -149,30 +145,30 @@ ws.onmessage = e=>{
         document.getElementById("status").textContent="Type this token in TikTok Live to verify";
     }
     else if(msg.type==="verified"){
-        if(msg.session===currentUser){
+        if(msg.session===currentSession || msg.username===username){
             verified=true;
-            pixelsLeft = msg.pixels_left || 1;
-            nextPixelTime = msg.next_pixel_time || null;
-            document.getElementById("status").textContent=`Welcome back ${msg.username}! You can place pixels.`;
-            startCountdown();
+            username=msg.username;
+            pixelsLeft=msg.pixels_left || 1;
+            nextPixelTime=msg.next_pixel_time || null;
+            document.getElementById("status").textContent="Welcome back "+username;
         }
     }
     else if(msg.type==="pixel"){
         pixels[msg.index]=1;
-        if(msg.session === currentUser){
+        if(msg.username===username){
             pixelsLeft = Math.max(0, pixelsLeft-1);
-            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : Date.now()/1000+10;
+            nextPixelTime = msg.next_pixel_time || (Date.now()/1000 + 5);
         }
         drawBoard();
     }
     else if(msg.type==="info"){
-        if(msg.session === currentUser){
+        if(msg.username===username){
             pixelsLeft = msg.pixels_left;
-            nextPixelTime = msg.next_pixel_time;
+            nextPixelTime = msg.next_pixel_time || nextPixelTime;
         }
     }
     else if(msg.type==="error"){
-        if(msg.session === undefined || msg.session === currentUser){
+        if(msg.session===currentSession || msg.username===username){
             alert(msg.message);
         }
     }
@@ -180,13 +176,7 @@ ws.onmessage = e=>{
 
 // --- Generate token ---
 document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"get_token", session:currentUser}));
-});
-
-// --- Verify token manually ---
-document.getElementById("verifyBtn").addEventListener("click", ()=>{
-    const token = document.getElementById("tokenInput").value.trim();
-    if(token) ws.send(JSON.stringify({action:"verify_token", token:token, session:currentUser}));
+    ws.send(JSON.stringify({action:"get_token", session:currentSession}));
 });
 
 drawBoard();
