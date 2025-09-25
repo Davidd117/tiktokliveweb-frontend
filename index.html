@@ -8,7 +8,7 @@ body { background:#111; color:white; text-align:center; font-family:Arial; }
 #canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
 canvas { width:100%; height:100%; display:block; }
 input, button { padding:5px; margin:5px; }
-#userInfo { margin-top: 10px; font-size: 14px; }
+#info { margin-top:10px; }
 </style>
 </head>
 <body>
@@ -18,13 +18,7 @@ input, button { padding:5px; margin:5px; }
   <button id="getTokenBtn">Generate Verification Token</button>
 </div>
 <div id="tokenDisplay">Token will appear here</div>
-<div id="status">Not verified</div>
-
-<div id="userInfo">
-  <span id="usernameDisplay">Username: -</span> |
-  <span id="pixelsDisplay">Pixels left: 0</span> |
-  <span id="timerDisplay">Next pixel in: 0s</span>
-</div>
+<div id="info">Not verified</div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -44,11 +38,10 @@ canvas.height = canvas.clientHeight;
 let scale, minScale, offsetX, offsetY;
 let dragging = false, lastX, lastY;
 let verified = false;
+let pixelsLeft = 0;
+let nextPixelTime = 0;
+let username = "";
 
-let cooldown = 0;
-let cooldownInterval = null;
-
-// --- Helpers ---
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
@@ -84,25 +77,6 @@ function drawBoard(){
     }
 }
 
-function updateUserInfo(username, pixelsLeft){
-    document.getElementById("usernameDisplay").textContent = "Username: " + username;
-    document.getElementById("pixelsDisplay").textContent = "Pixels left: " + pixelsLeft;
-}
-
-function startCooldown(seconds){
-    cooldown = seconds;
-    if(cooldownInterval) clearInterval(cooldownInterval);
-    cooldownInterval = setInterval(()=>{
-        if(cooldown <= 0){
-            clearInterval(cooldownInterval);
-            document.getElementById("timerDisplay").textContent = "Next pixel in: 0s";
-        } else {
-            document.getElementById("timerDisplay").textContent = "Next pixel in: " + cooldown + "s";
-            cooldown--;
-        }
-    }, 1000);
-}
-
 // --- Zoom & Pan ---
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
@@ -127,7 +101,11 @@ canvas.addEventListener("mouseup", e=>{dragging=false; canvas.style.cursor="grab
 // --- Place pixel ---
 canvas.addEventListener("click", e=>{
     if(!verified) { alert("You are not verified!"); return; }
-    if(cooldown > 0) { alert("Wait for cooldown!"); return; }
+    const now = Date.now() / 1000;
+    if(pixelsLeft <= 0 && now < nextPixelTime){
+        alert(`Cooldown active. Wait ${Math.ceil(nextPixelTime-now)} sec`);
+        return;
+    }
     const x=Math.floor((e.offsetX-offsetX)/scale);
     const y=Math.floor((e.offsetY-offsetY)/scale);
     if(x>=0 && y>=0 && x<gridSize && y<gridSize){
@@ -135,37 +113,47 @@ canvas.addEventListener("click", e=>{
     }
 });
 
+// --- Update info display ---
+function updateInfo(){
+    if(verified){
+        const now = Date.now()/1000;
+        let cd = 0;
+        if(pixelsLeft <= 0 && nextPixelTime>now){
+            cd = Math.ceil(nextPixelTime - now);
+        }
+        document.getElementById("info").textContent = 
+            `User: ${username} | Pixels left: ${pixelsLeft} | Next pixel in: ${cd}s`;
+    }
+}
+
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
 ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
 
     if(msg.type === "init_pixels"){
-        for(const idx in msg.pixels) pixels[idx] = 1;
+        for(const idx in msg.pixels){ pixels[idx] = 1; }
         drawBoard();
     } 
     else if(msg.type==="token"){
         document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
-        document.getElementById("status").textContent="Type this token in TikTok Live to verify";
+        document.getElementById("info").textContent="Type this token in TikTok Live to verify";
     } 
     else if(msg.type==="verified"){
         if(msg.session===currentUser){
-            verified = true;
-            document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
-
-            // Update user info
-            const userData = msg.username || "Unknown"; // if backend sends username
-            updateUserInfo(userData, 1); 
-            startCooldown(5); // 10 min default
+            verified=true;
+            username = msg.username;
+            pixelsLeft = 1;
+            nextPixelTime = 0;
         }
     } 
     else if(msg.type==="pixel"){
         pixels[msg.index]=1; 
         drawBoard();
-
+        // If this pixel belongs to current user, update pixels left
         if(msg.session === currentUser){
-            updateUserInfo(document.getElementById("usernameDisplay").textContent.replace("Username: ",""), 0);
-            startCooldown(5);
+            pixelsLeft -= 1;
+            nextPixelTime = msg.next_pixel_time || (Date.now()/1000 + 600);
         }
     } 
     else if(msg.type==="clear"){
@@ -175,13 +163,9 @@ ws.onmessage = e=>{
     else if(msg.type==="error"){
         if(msg.session === undefined || msg.session === currentUser){
             alert(msg.message);
-
-            if(msg.message.includes("already been verified")){
-                // Show returning user info and start timer
-                const userData = msg.username || document.getElementById("usernameDisplay").textContent.replace("Username: ","");
-                updateUserInfo(userData, 1);
-                startCooldown(5);
-            }
+            // If user info sent, update
+            if(msg.username){ username = msg.username; }
+            if(msg.pixels_left!==undefined){ pixelsLeft = msg.pixels_left; }
         }
     }
 };
@@ -191,9 +175,10 @@ document.getElementById("getTokenBtn").addEventListener("click", ()=>{
     ws.send(JSON.stringify({action:"get_token", session:currentUser}));
 });
 
+// --- Timer update ---
+setInterval(updateInfo, 1000);
+
 drawBoard();
 </script>
 </body>
 </html>
-
-
