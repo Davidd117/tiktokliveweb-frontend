@@ -202,7 +202,7 @@ ws.onmessage = e=>{
     else if(msg.type==="clear_user"){  
     const removed = msg.sessionMap; // { index: session, ... }
     for(const idx in removed){
-        pixels[idx] = 0; // clear the pixel locally
+        pixels[Number(idx)] = 0; // <-- convert to number
     }
     drawBoard(); // redraw canvas immediately
 
@@ -210,9 +210,11 @@ ws.onmessage = e=>{
     const statusDiv = document.getElementById("status");
     statusDiv.textContent = `Cleared ${Object.keys(removed).length} pixels for user: ${msg.target}`;
     
-    // Clear the message after 5 seconds
-    setTimeout(()=>{ statusDiv.textContent = verified ? `Welcome back ${username} | Pixels left: ${pixelsLeft}` : "Not verified"; }, 5000);
+    setTimeout(()=>{
+        statusDiv.textContent = verified ? `Welcome back ${username} | Pixels left: ${pixelsLeft}` : "Not verified";
+    }, 5000);
 }
+
 
     else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession){ alert(msg.message); } }
 };
