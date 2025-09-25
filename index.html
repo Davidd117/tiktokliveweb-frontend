@@ -9,7 +9,6 @@
   canvas { width:100%; height:100%; display:block; }
   input, button { padding:5px; margin:5px; }
   #userInfo { margin-top: 10px; }
-  #messages { color:yellow; margin-top:10px; min-height:18px; }
   #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
 </style>
 </head>
@@ -35,7 +34,6 @@
 
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
-<div id="messages"></div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -175,17 +173,12 @@ setInterval(()=>{
 
 // --- WebSocket ---
 ws.onopen = ()=> console.log("✅ WS connected!");
-ws.onmessage = async e=>{
+ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
-    const messagesDiv = document.getElementById("messages");
-
-    if(msg.type==="init_pixels"){ 
-        for(const idx in msg.pixels){ pixels[idx]=1; } 
-        drawBoard(); 
-    }
+    if(msg.type==="init_pixels"){ for(const idx in msg.pixels){ pixels[idx]=1; } drawBoard(); }
     else if(msg.type==="token"){
         verificationToken = msg.token;
-        returnToken = msg.return_token;
+        returnToken = msg.return_token; // server must provide this
         document.getElementById("verificationToken").value = verificationToken;
         document.getElementById("returnToken").value = returnToken;
         document.getElementById("status").textContent = "Type verification token in TikTok chat!";
@@ -199,7 +192,6 @@ ws.onmessage = async e=>{
             returnToken = msg.return_token ?? returnToken;
             document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
             document.getElementById("returnToken").value = returnToken;
-            messagesDiv.textContent = ""; // clear any previous message
         }
     }
     else if(msg.type==="pixel"){
@@ -207,12 +199,7 @@ ws.onmessage = async e=>{
         if(msg.session===currentSession){ pixelsLeft = Math.max(0,pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
         drawBoard();
     }
-    else if(msg.type==="error"){
-        // Only display the error if it matches this session
-        if(msg.session===undefined || msg.session===currentSession){
-            messagesDiv.textContent = msg.message;
-        }
-    }
+    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession){ alert(msg.message); } }
 };
 
 // --- Generate verification token ---
@@ -232,53 +219,24 @@ document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
 document.getElementById("adminLoginBtn").addEventListener("click", ()=> {
     document.getElementById("adminPanel").style.display="block";
 });
-
-// --- Verify Admin Key ---
 document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
     const key = document.getElementById("adminKeyInput").value.trim();
-    const messagesDiv = document.getElementById("userInfo"); // or create a separate div
-    if(!key){
-        messagesDiv.textContent = "❌ Enter admin key";
-        return;
-    }
-    // Send admin check request to server
-    ws.send(JSON.stringify({action:"admin", key:key, command:"check", session:currentSession}));
+    if(!key) return alert("Enter admin key");
+    document.getElementById("adminControls").style.display="block";
 });
-
-// --- Admin WS response handling ---
-ws.onmessage = (e)=>{
-    const msg = JSON.parse(e.data);
-
-    // Admin key invalid
-    if(msg.type==="error" && msg.message==="Invalid admin key" && msg.session===currentSession){
-        document.getElementById("userInfo").textContent = "❌ Incorrect admin key!";
-        document.getElementById("adminControls").style.display="none";
-    }
-
-    // Admin key correct
-    if(msg.type==="info" && msg.message==="Admin key correct" && msg.session===currentSession){
-        document.getElementById("userInfo").textContent = "✅ Correct admin key!";
-        document.getElementById("adminControls").style.display="block";
-    }
-
-    // ... keep your other WS message handling here ...
-};
-
-// --- Admin commands ---
 document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
     const user = document.getElementById("adminUsername").value.trim();
     if(!user) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target:user}));
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", username:user}));
 });
 document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
     const user = document.getElementById("adminUsername").value.trim();
     if(!user) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target:user}));
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", username:user}));
 });
 document.getElementById("clearAllBtn").addEventListener("click", ()=>{
     ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
 });
-
 
 drawBoard();
 </script>
