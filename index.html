@@ -9,8 +9,8 @@
   canvas { width:100%; height:100%; display:block; }
   input, button { padding:5px; margin:5px; }
   #userInfo { margin-top: 10px; }
-  #messages { color:yellow; margin-top:10px; min-height:18px; }
   #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
+  #messages { margin-top:10px; color: yellow; }
 </style>
 </head>
 <body>
@@ -35,7 +35,6 @@
 
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
-<div id="messages"></div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -47,6 +46,7 @@
 <div id="adminPanel">
   <input type="text" id="adminKeyInput" placeholder="Admin Key">
   <button id="adminVerifyBtn">Verify Admin</button>
+  <div id="messages"></div>
   <div id="adminControls" style="display:none;">
     <input type="text" id="adminUsername" placeholder="Username">
     <button id="clearUserPixelsBtn">Clear User Pixels</button>
@@ -59,6 +59,7 @@
 const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
+// --- Canvas setup ---
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
@@ -77,7 +78,7 @@ let nextPixelTime=null;
 let returnToken=null;
 let verificationToken=null;
 
-// --- Canvas view ---
+// --- Canvas view functions ---
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
@@ -152,7 +153,7 @@ canvas.addEventListener("mouseup", e=>{
     dragging=false;
 });
 
-// --- Update user info ---
+// --- User info ---
 function updateUserInfo(){
     const infoDiv = document.getElementById("userInfo");
     let timeLeft = 0;
@@ -162,27 +163,12 @@ function updateUserInfo(){
         : `Not verified`;
 }
 
-// --- Countdown ---
-setInterval(()=>{
-    if(!verified || !nextPixelTime) return;
-    const now = Date.now()/1000;
-    if(now >= nextPixelTime){
-        pixelsLeft++;
-        nextPixelTime = now + 5; // server cooldown
-    }
-    updateUserInfo();
-}, 1000);
-
 // --- WebSocket ---
 ws.onopen = ()=> console.log("✅ WS connected!");
-ws.onmessage = async e=>{
+ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
-    const messagesDiv = document.getElementById("messages");
 
-    if(msg.type==="init_pixels"){ 
-        for(const idx in msg.pixels){ pixels[idx]=1; } 
-        drawBoard(); 
-    }
+    if(msg.type==="init_pixels"){ for(const idx in msg.pixels){ pixels[idx]=1; } drawBoard(); }
     else if(msg.type==="token"){
         verificationToken = msg.token;
         returnToken = msg.return_token;
@@ -190,37 +176,35 @@ ws.onmessage = async e=>{
         document.getElementById("returnToken").value = returnToken;
         document.getElementById("status").textContent = "Type verification token in TikTok chat!";
     }
-    else if(msg.type==="verified"){
-        if(msg.session===currentSession){
-            verified=true;
-            username=msg.username;
-            pixelsLeft = msg.pixels_left ?? 1;
-            nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 5);
-            returnToken = msg.return_token ?? returnToken;
-            document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
-            document.getElementById("returnToken").value = returnToken;
-            messagesDiv.textContent = ""; // clear any previous message
-        }
+    else if(msg.type==="verified" && msg.session===currentSession){
+        verified=true;
+        username=msg.username;
+        pixelsLeft = msg.pixels_left ?? 1;
+        nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 5);
+        returnToken = msg.return_token ?? returnToken;
+        document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
+        document.getElementById("returnToken").value = returnToken;
     }
     else if(msg.type==="pixel"){
         pixels[msg.index]=1;
         if(msg.session===currentSession){ pixelsLeft = Math.max(0,pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
         drawBoard();
     }
-    else if(msg.type==="error"){
-        // Only display the error if it matches this session
-        if(msg.session===undefined || msg.session===currentSession){
-            messagesDiv.textContent = msg.message;
+    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession){ alert(msg.message); } }
+    else if(msg.type==="admin_verified" && msg.session===currentSession){
+        const messagesDiv = document.getElementById("messages");
+        if(msg.valid){
+            messagesDiv.textContent = "✅ Correct admin key!";
+            document.getElementById("adminControls").style.display="block";
+        } else {
+            messagesDiv.textContent = "❌ Incorrect admin key!";
+            document.getElementById("adminControls").style.display="none";
         }
     }
 };
 
-// --- Generate verification token ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"get_token", session:currentSession}));
-});
-
-// --- Returning login ---
+// --- Buttons ---
+document.getElementById("getTokenBtn").addEventListener("click", ()=> ws.send(JSON.stringify({action:"get_token", session:currentSession})));
 document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
     const uname = document.getElementById("usernameInput").value.trim();
     const rtoken = document.getElementById("returnCodeInput").value.trim();
@@ -229,14 +213,13 @@ document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
 });
 
 // --- Admin login ---
-document.getElementById("adminLoginBtn").addEventListener("click", ()=> {
-    document.getElementById("adminPanel").style.display="block";
-});
+document.getElementById("adminLoginBtn").addEventListener("click", ()=> document.getElementById("adminPanel").style.display="block");
 document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
     const key = document.getElementById("adminKeyInput").value.trim();
-    if(!key) return alert("Enter admin key");
-    document.getElementById("adminControls").style.display="block";
+    if(!key){ document.getElementById("messages").textContent="Enter admin key"; return; }
+    ws.send(JSON.stringify({action:"verify_admin", key:key, session:currentSession}));
 });
+
 document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
     const user = document.getElementById("adminUsername").value.trim();
     if(!user) return alert("Enter username");
@@ -250,6 +233,14 @@ document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
 document.getElementById("clearAllBtn").addEventListener("click", ()=>{
     ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
 });
+
+// --- Cooldown ---
+setInterval(()=>{
+    if(!verified || !nextPixelTime) return;
+    const now = Date.now()/1000;
+    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime = now + 5; }
+    updateUserInfo();
+}, 1000);
 
 drawBoard();
 </script>
