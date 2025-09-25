@@ -27,11 +27,6 @@ input, button { padding:5px; margin:5px; }
 
 <script>
 const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
-let username = null;
-let verified = false;
-let pixelsLeft = 0;
-let nextPixelTime = null;
-
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
 const canvas = document.getElementById("canvas");
@@ -42,7 +37,9 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX, lastY;
+let dragging=false, lastX, lastY, mouseDownX, mouseDownY;
+let verified=false, pixelsLeft=0, nextPixelTime=null;
+let countdownInterval=null;
 
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
@@ -53,8 +50,8 @@ function resetView(){
 resetView();
 
 function clampOffsets(){
-    const maxOffsetX=0, maxOffsetY=0;
-    const minOffsetX=canvas.width - gridSize*scale, minOffsetY=canvas.height - gridSize*scale;
+    const maxOffsetX = 0, maxOffsetY=0;
+    const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
     if(offsetX>maxOffsetX) offsetX=maxOffsetX;
     if(offsetY>maxOffsetY) offsetY=maxOffsetY;
     if(offsetX<minOffsetX) offsetX=minOffsetX;
@@ -65,13 +62,11 @@ function drawBoard(){
     ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
     ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
     ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
-
     if(scale>4){
         ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
         for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
         for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
     }
-
     for(let i=0;i<pixels.length;i++){
         if(pixels[i]){
             const x=i%gridSize, y=Math.floor(i/gridSize);
@@ -94,49 +89,81 @@ canvas.addEventListener("wheel", e=>{
     clampOffsets();
     drawBoard();
 });
-canvas.addEventListener("mousedown", e=>{
-    if(e.button===0){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing";}
-});
-canvas.addEventListener("mousemove", e=>{
-    if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
-});
-canvas.addEventListener("mouseup", e=>{dragging=false; canvas.style.cursor="grab";});
 
-// --- Place pixel ---
-canvas.addEventListener("click", e=>{
-    if(!verified) { alert("You are not verified!"); return; }
-    if(pixelsLeft <= 0) { alert("No pixels available! Wait for cooldown."); return; }
-    const x=Math.floor((e.offsetX-offsetX)/scale);
-    const y=Math.floor((e.offsetY-offsetY)/scale);
-    if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-        ws.send(JSON.stringify({action:"place_pixel", session:currentUser}));
+canvas.addEventListener("mousedown", e=>{
+    if(e.button===0){
+        dragging=false;
+        mouseDownX=e.clientX;
+        mouseDownY=e.clientY;
+        lastX=e.clientX;
+        lastY=e.clientY;
     }
 });
 
-// --- Update user info ---
+canvas.addEventListener("mousemove", e=>{
+    const dx = e.clientX - mouseDownX;
+    const dy = e.clientY - mouseDownY;
+    if(!dragging && Math.sqrt(dx*dx + dy*dy) > 3) { // threshold to start drag
+        dragging=true;
+        canvas.style.cursor="grabbing";
+    }
+    if(dragging){
+        offsetX += e.clientX - lastX;
+        offsetY += e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        clampOffsets();
+        drawBoard();
+    }
+});
+
+canvas.addEventListener("mouseup", e=>{
+    if(!dragging){ // treat as click
+        const x=Math.floor((e.offsetX-offsetX)/scale);
+        const y=Math.floor((e.offsetY-offsetY)/scale);
+        if(!verified){ alert("You are not verified!"); return; }
+        if(pixelsLeft <= 0){ alert("No pixels available! Wait for cooldown."); return; }
+        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
+            const idx = x+y*gridSize;
+            ws.send(JSON.stringify({action:"place_pixel", session:currentUser, index:idx}));
+        }
+    }
+    dragging=false;
+    canvas.style.cursor="grab";
+});
+
+// --- Update user info display ---
 function updateUserInfo(){
-    const infoDiv=document.getElementById("userInfo");
-    let timeLeft=0;
-    if(nextPixelTime) timeLeft=Math.max(0,Math.floor(nextPixelTime - Date.now()/1000));
-    infoDiv.textContent = username ? `User: ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s` : '';
+    const infoDiv = document.getElementById("userInfo");
+    let timeLeft = 0;
+    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    infoDiv.textContent = `User: ${verified ? username : currentUser} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
 }
 
 // --- Countdown timer ---
-setInterval(()=>{
-    if(nextPixelTime && Date.now()/1000 >= nextPixelTime){
-        pixelsLeft++;
-        nextPixelTime = Date.now()/1000 + 5; // server cooldown
-    }
-    updateUserInfo();
-}, 1000);
+function startCountdown(){
+    if(countdownInterval) clearInterval(countdownInterval);
+    countdownInterval=setInterval(()=>{
+        if(nextPixelTime && pixelsLeft>=0){
+            let remaining = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+            if(remaining<=0){
+                pixelsLeft+=1;
+                nextPixelTime = Date.now()/1000 + 5; // COOLDOWN
+                ws.send(JSON.stringify({action:"update_pixels", session:currentUser}));
+            }
+        }
+        updateUserInfo();
+    },1000);
+}
 
 // --- WebSocket ---
-ws.onopen = () => console.log("✅ WS connected!");
+let username="";
+ws.onopen = ()=>console.log("✅ WS connected!");
 ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
 
     if(msg.type==="init_pixels"){
-        for(const idx in msg.pixels) pixels[idx]=1;
+        for(const idx in msg.pixels){ pixels[idx]=1; }
         drawBoard();
     }
     else if(msg.type==="token"){
@@ -144,30 +171,31 @@ ws.onmessage = e=>{
         document.getElementById("status").textContent="Type this token in TikTok Live to verify";
     }
     else if(msg.type==="verified"){
-        if(msg.session===currentUser || msg.username===username){
+        if(msg.session===currentUser){
             verified=true;
             username=msg.username;
-            pixelsLeft=msg.pixels_left ?? 1;
-            nextPixelTime=msg.next_pixel_time ?? null;
-            document.getElementById("status").textContent=`Welcome back ${username}! You can place ${pixelsLeft} pixel(s)`;
+            if(msg.pixels_left!==undefined) pixelsLeft=msg.pixels_left;
+            if(msg.next_pixel_time) nextPixelTime=msg.next_pixel_time;
+            document.getElementById("status").textContent="Welcome back "+username+"! You can place your pixels.";
+            startCountdown();
         }
     }
     else if(msg.type==="pixel"){
         pixels[msg.index]=1;
-        if(msg.username===username){
+        if(msg.session === currentUser){
             pixelsLeft = Math.max(0, pixelsLeft-1);
-            nextPixelTime = Date.now()/1000 + 5;
+            nextPixelTime = Date.now()/1000 + 5; // COOLDOWN
         }
         drawBoard();
     }
     else if(msg.type==="info"){
-        if(msg.username===username){
-            pixelsLeft = msg.pixels_left;
-            nextPixelTime = msg.next_pixel_time;
+        if(msg.session === currentUser){
+            if(msg.pixels_left!==undefined) pixelsLeft = msg.pixels_left;
+            if(msg.next_pixel_time) nextPixelTime = msg.next_pixel_time;
         }
     }
     else if(msg.type==="error"){
-        if(msg.session===undefined || msg.session===currentUser){
+        if(msg.session === undefined || msg.session === currentUser){
             alert(msg.message);
         }
     }
