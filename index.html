@@ -8,6 +8,7 @@ body { background:#111; color:white; text-align:center; font-family:Arial; }
 #canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
 canvas { width:100%; height:100%; display:block; }
 input, button { padding:5px; margin:5px; }
+#userInfo { margin-top: 10px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -18,6 +19,12 @@ input, button { padding:5px; margin:5px; }
 </div>
 <div id="tokenDisplay">Token will appear here</div>
 <div id="status">Not verified</div>
+
+<div id="userInfo">
+  <span id="usernameDisplay">Username: -</span> |
+  <span id="pixelsDisplay">Pixels left: 0</span> |
+  <span id="timerDisplay">Next pixel in: 0s</span>
+</div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -38,6 +45,10 @@ let scale, minScale, offsetX, offsetY;
 let dragging = false, lastX, lastY;
 let verified = false;
 
+let cooldown = 0;
+let cooldownInterval = null;
+
+// --- Helpers ---
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
@@ -73,6 +84,25 @@ function drawBoard(){
     }
 }
 
+function updateUserInfo(username, pixelsLeft){
+    document.getElementById("usernameDisplay").textContent = "Username: " + username;
+    document.getElementById("pixelsDisplay").textContent = "Pixels left: " + pixelsLeft;
+}
+
+function startCooldown(seconds){
+    cooldown = seconds;
+    if(cooldownInterval) clearInterval(cooldownInterval);
+    cooldownInterval = setInterval(()=>{
+        if(cooldown <= 0){
+            clearInterval(cooldownInterval);
+            document.getElementById("timerDisplay").textContent = "Next pixel in: 0s";
+        } else {
+            document.getElementById("timerDisplay").textContent = "Next pixel in: " + cooldown + "s";
+            cooldown--;
+        }
+    }, 1000);
+}
+
 // --- Zoom & Pan ---
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
@@ -97,6 +127,7 @@ canvas.addEventListener("mouseup", e=>{dragging=false; canvas.style.cursor="grab
 // --- Place pixel ---
 canvas.addEventListener("click", e=>{
     if(!verified) { alert("You are not verified!"); return; }
+    if(cooldown > 0) { alert("Wait for cooldown!"); return; }
     const x=Math.floor((e.offsetX-offsetX)/scale);
     const y=Math.floor((e.offsetY-offsetY)/scale);
     if(x>=0 && y>=0 && x<gridSize && y<gridSize){
@@ -110,10 +141,7 @@ ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
 
     if(msg.type === "init_pixels"){
-        // Populate the pixels array from server on load
-        for(const idx in msg.pixels){
-            pixels[idx] = 1;
-        }
+        for(const idx in msg.pixels) pixels[idx] = 1;
         drawBoard();
     } 
     else if(msg.type==="token"){
@@ -122,22 +150,38 @@ ws.onmessage = e=>{
     } 
     else if(msg.type==="verified"){
         if(msg.session===currentUser){
-            verified=true;
+            verified = true;
             document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
+
+            // Update user info
+            const userData = msg.username || "Unknown"; // if backend sends username
+            updateUserInfo(userData, 1); 
+            startCooldown(600); // 10 min default
         }
     } 
     else if(msg.type==="pixel"){
         pixels[msg.index]=1; 
         drawBoard();
+
+        if(msg.session === currentUser){
+            updateUserInfo(document.getElementById("usernameDisplay").textContent.replace("Username: ",""), 0);
+            startCooldown(600);
+        }
     } 
     else if(msg.type==="clear"){
         for(let i=0;i<pixels.length;i++) pixels[i]=0; 
         drawBoard();
     } 
     else if(msg.type==="error"){
-        // Only show error to this session (prevents broadcast to all)
         if(msg.session === undefined || msg.session === currentUser){
             alert(msg.message);
+
+            if(msg.message.includes("already been verified")){
+                // Show returning user info and start timer
+                const userData = msg.username || document.getElementById("usernameDisplay").textContent.replace("Username: ","");
+                updateUserInfo(userData, 1);
+                startCooldown(600);
+            }
         }
     }
 };
