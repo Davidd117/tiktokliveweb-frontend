@@ -199,14 +199,21 @@ ws.onmessage = e=>{
         if(msg.session===currentSession){ pixelsLeft = Math.max(0,pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
         drawBoard();
     }
-    else if(msg.type==="clear_user"){  // <-- NEW BLOCK
-        const removed = msg.sessionMap; // { index: session, ... }
-        for(const idx in removed){
-            pixels[idx] = 0; // clear from local pixels array
-        }
-        drawBoard(); // redraw canvas
-        alert(`Cleared ${Object.keys(removed).length} pixels for user: ${msg.target}`);
+    else if(msg.type==="clear_user"){  
+    const removed = msg.sessionMap; // { index: session, ... }
+    for(const idx in removed){
+        pixels[idx] = 0; // clear the pixel locally
     }
+    drawBoard(); // redraw canvas immediately
+
+    // Optional: live status message
+    const statusDiv = document.getElementById("status");
+    statusDiv.textContent = `Cleared ${Object.keys(removed).length} pixels for user: ${msg.target}`;
+    
+    // Clear the message after 5 seconds
+    setTimeout(()=>{ statusDiv.textContent = verified ? `Welcome back ${username} | Pixels left: ${pixelsLeft}` : "Not verified"; }, 5000);
+}
+
     else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession){ alert(msg.message); } }
 };
 
