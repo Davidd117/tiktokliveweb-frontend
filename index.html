@@ -4,22 +4,25 @@
 <meta charset="UTF-8">
 <title>TikTok Live R/Place</title>
 <style>
-body { background:#111; color:white; font-family:Arial; text-align:center; margin:0; padding:0; }
-#canvasContainer { width:100%; height:80vh; background:#222; overflow:hidden; cursor:grab; position:relative; }
-canvas { display:block; width:100%; height:100%; }
-input, button { padding:8px 12px; margin:5px; font-size:14px; }
+body { background:#111; color:white; text-align:center; font-family:Arial; margin:0; }
+#canvasContainer { width: 100%; height: 90vh; position: relative; }
+canvas { width:100%; height:100%; display:block; cursor: grab; }
+input, button { padding:5px; margin:5px; font-size:14px; }
 #tokenDisplay, #status, #userInfo { margin:5px; }
+#adminPanel { display:none; position:absolute; top:10%; left:10%; width:300px; background:#222; border:2px solid #4ce0ff; padding:15px; color:white; z-index:100; }
+#adminPanel input { width:90%; }
 </style>
 </head>
 <body>
 
-<h2>TikTok Live R/Place (1000x1000)</h2>
+<h2>TikTok Live R/Place</h2>
 
 <div id="login">
-  <input type="text" id="usernameInput" placeholder="Enter username">
-  <input type="text" id="returnCodeInput" placeholder="Return code">
-  <button id="returnLoginBtn">Return Login</button>
+  <input type="text" id="usernameInput" placeholder="Username (return login)">
+  <input type="text" id="returnCodeInput" placeholder="Return Code">
+  <button id="loginBtn">Return Login</button>
   <button id="getTokenBtn">Generate Verification Token</button>
+  <button id="adminLoginBtn">Admin Login</button>
 </div>
 
 <div id="tokenDisplay">Token will appear here</div>
@@ -30,199 +33,210 @@ input, button { padding:8px 12px; margin:5px; font-size:14px; }
   <canvas id="canvas"></canvas>
 </div>
 
+<div id="adminPanel">
+  <h3>Admin Panel</h3>
+  <label>Username:</label><br>
+  <input type="text" id="adminUsername" placeholder="Enter username"><br>
+  <button id="unverifyUserBtn">Unverify User</button>
+  <button id="clearUserPixelsBtn">Clear User Pixels</button><br><br>
+  <button id="clearAllBtn">Clear Entire Canvas</button>
+  <button id="closeAdminBtn">Close Panel</button>
+</div>
+
 <script>
-// --- SESSION & WS ---
-const session = 'session_' + Math.random().toString(36).substring(2,10);
+const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
-// --- GRID ---
-const GRID_SIZE = 1000;
-const pixels = new Uint8Array(GRID_SIZE*GRID_SIZE);
-
-// --- CANVAS ---
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const gridSize = 1000;
+const pixels = new Uint8Array(gridSize*gridSize);
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX=0, lastY=0;
+let dragging=false, lastX=0, lastY=0, dragMoved=false;
+const dragThreshold = 5;
 
-// --- USER STATE ---
 let verified=false;
 let username=null;
 let pixelsLeft=0;
 let nextPixelTime=null;
 
-// --- VIEW ---
+// --- View ---
 function resetView(){
-  minScale = Math.min(canvas.width/GRID_SIZE, canvas.height/GRID_SIZE);
-  scale = minScale;
-  offsetX = (canvas.width - GRID_SIZE*scale)/2;
-  offsetY = (canvas.height - GRID_SIZE*scale)/2;
+    minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
+    scale = minScale;
+    offsetX = (canvas.width - gridSize*scale)/2;
+    offsetY = (canvas.height - gridSize*scale)/2;
 }
 resetView();
 
 function clampOffsets(){
-  const maxX=0, maxY=0;
-  const minX=canvas.width-GRID_SIZE*scale, minY=canvas.height-GRID_SIZE*scale;
-  offsetX=Math.max(Math.min(offsetX,maxX),minX);
-  offsetY=Math.max(Math.min(offsetY,maxY),minY);
+    const maxOffsetX = 0, maxOffsetY=0;
+    const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
+    if(offsetX>maxOffsetX) offsetX=maxOffsetX;
+    if(offsetY>maxOffsetY) offsetY=maxOffsetY;
+    if(offsetX<minOffsetX) offsetX=minOffsetX;
+    if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
 
 function drawBoard(){
-  ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
-  ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-  ctx.fillStyle="#222";
-  ctx.fillRect(0,0,GRID_SIZE,GRID_SIZE);
-
-  // Draw pixels
-  for(let i=0;i<pixels.length;i++){
-    if(pixels[i]){
-      const x=i%GRID_SIZE, y=Math.floor(i/GRID_SIZE);
-      ctx.fillStyle="#4ce0ff";
-      ctx.fillRect(x,y,1,1);
+    ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
+    ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
+    ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
+    if(scale>4){
+        ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
+        for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
+        for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
     }
-  }
-
-  // Optional grid lines
-  if(scale>4){
-    ctx.strokeStyle="#333";
-    ctx.lineWidth=0.05;
-    for(let x=0;x<GRID_SIZE;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,GRID_SIZE);ctx.stroke();}
-    for(let y=0;y<GRID_SIZE;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(GRID_SIZE,y);ctx.stroke();}
-  }
+    for(let i=0;i<pixels.length;i++){
+        if(pixels[i]){
+            const x=i%gridSize, y=Math.floor(i/gridSize);
+            ctx.fillStyle="#4ce0ff";
+            ctx.fillRect(x,y,1,1);
+        }
+    }
 }
 
-// --- PAN & ZOOM ---
-canvas.addEventListener('wheel', e=>{
-  e.preventDefault();
-  const mx=(e.offsetX-offsetX)/scale;
-  const my=(e.offsetY-offsetY)/scale;
-  const zoom = e.deltaY<0?1.1:0.9;
-  scale*=zoom;
-  scale=Math.min(Math.max(scale,minScale),40);
-  offsetX=e.offsetX - mx*scale;
-  offsetY=e.offsetY - my*scale;
-  clampOffsets();
-  drawBoard();
-});
-
-canvas.addEventListener('mousedown', e=>{
-  if(e.button!==0) return;
-  lastX=e.clientX; lastY=e.clientY; dragging=false;
-});
-
-canvas.addEventListener('mousemove', e=>{
-  if(e.buttons!==1) return;
-  const dx=e.clientX-lastX, dy=e.clientY-lastY;
-  if(Math.abs(dx)>2 || Math.abs(dy)>2) dragging=true;
-  if(dragging){
-    offsetX+=dx; offsetY+=dy;
-    lastX=e.clientX; lastY=e.clientY;
+// --- Zoom & Pan ---
+canvas.addEventListener("wheel", e=>{
+    e.preventDefault();
+    const mouseX=(e.offsetX-offsetX)/scale;
+    const mouseY=(e.offsetY-offsetY)/scale;
+    const zoom=e.deltaY<0?1.1:0.9;
+    scale*=zoom;
+    scale=Math.min(Math.max(scale,minScale),40);
+    offsetX=e.offsetX - mouseX*scale;
+    offsetY=e.offsetY - mouseY*scale;
     clampOffsets();
     drawBoard();
-  }
 });
 
-canvas.addEventListener('mouseup', e=>{
-  if(!dragging){
-    if(!verified){ alert("You are not verified!"); return; }
-    if(pixelsLeft<=0){ alert("No pixels left! Wait for cooldown."); return; }
-    const x=Math.floor((e.offsetX-offsetX)/scale);
-    const y=Math.floor((e.offsetY-offsetY)/scale);
-    if(x>=0 && y>=0 && x<GRID_SIZE && y<GRID_SIZE){
-      ws.send(JSON.stringify({action:"place_pixel", session, index:x+y*GRID_SIZE}));
+canvas.addEventListener("mousedown", e=>{
+    if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragMoved=false; dragging=false; }
+});
+canvas.addEventListener("mousemove", e=>{
+    if(e.buttons===1){
+        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold){ dragging=true; }
+        if(dragging){
+            offsetX += e.clientX-lastX;
+            offsetY += e.clientY-lastY;
+            lastX=e.clientX; lastY=e.clientY;
+            clampOffsets();
+            drawBoard();
+        }
     }
-  }
-  dragging=false;
+});
+canvas.addEventListener("mouseup", e=>{
+    if(!dragging){
+        if(!verified) { alert("You are not verified!"); return; }
+        if(pixelsLeft <=0) { alert("No pixels available! Wait for cooldown."); return; }
+        const x=Math.floor((e.offsetX-offsetX)/scale);
+        const y=Math.floor((e.offsetY-offsetY)/scale);
+        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
+            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize}));
+        }
+    }
+    dragging=false;
 });
 
-// --- UPDATE USER INFO ---
+// --- Update user info ---
 function updateUserInfo(){
-  const infoDiv=document.getElementById('userInfo');
-  let timeLeft=0;
-  if(nextPixelTime) timeLeft=Math.max(0,Math.floor(nextPixelTime-Date.now()/1000));
-  infoDiv.textContent = username?
-    `User: ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
-    : 'Not verified';
+    const infoDiv = document.getElementById("userInfo");
+    let timeLeft = 0;
+    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    infoDiv.textContent = username ? 
+        `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
+        : `Not verified`;
 }
 
-// Countdown timer
+// --- Countdown timer ---
 setInterval(()=>{
-  if(!verified || !nextPixelTime) return;
-  const now=Date.now()/1000;
-  if(now>=nextPixelTime){
-    pixelsLeft++;
-    nextPixelTime=now+5; // server cooldown
-  }
-  updateUserInfo();
-},1000);
+    if(!verified || !nextPixelTime) return;
+    const now = Date.now()/1000;
+    if(now >= nextPixelTime){
+        pixelsLeft++;
+        nextPixelTime = now + 5; // match server cooldown
+    }
+    updateUserInfo();
+}, 1000);
 
-// --- WEBSOCKET ---
-ws.onopen = ()=>console.log("✅ WS connected");
-
+// --- WebSocket ---
+ws.onopen = () => console.log("✅ WS connected!");
 ws.onmessage = e=>{
-  const msg = JSON.parse(e.data);
-
-  if(msg.type==="init_pixels"){
-    for(const idx in msg.pixels) pixels[idx]=1;
-    drawBoard();
-  }
-  else if(msg.type==="token"){
-    document.getElementById("tokenDisplay").textContent = "Your token: "+msg.token;
-    document.getElementById("status").textContent = "Type this token in TikTok Live chat to verify";
-  }
-  else if(msg.type==="verified"){
-    if(msg.session===session){
-      verified=true;
-      username=msg.username;
-      pixelsLeft=msg.pixels_left ?? 1;
-      nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5);
-      document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
+    const msg = JSON.parse(e.data);
+    if(msg.type === "init_pixels"){ for(const idx in msg.pixels){ pixels[idx]=1; } drawBoard(); }
+    else if(msg.type==="token"){
+        document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
+        document.getElementById("status").textContent="Type this token in TikTok Live chat to verify";
     }
-  }
-  else if(msg.type==="pixel"){
-    pixels[msg.index]=1;
-    if(msg.session===session){
-      pixelsLeft=Math.max(0,pixelsLeft-1);
-      nextPixelTime=Date.now()/1000+5;
+    else if(msg.type==="verified"){
+        if(msg.session===currentSession){
+            verified=true;
+            username=msg.username;
+            pixelsLeft = msg.pixels_left ?? 1;
+            nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 5);
+            document.getElementById("status").textContent=`VERIFIED! Welcome back ${username}`;
+        }
     }
-    drawBoard();
-  }
-  else if(msg.type==="info"){
-    if(msg.session===session){
-      pixelsLeft=msg.pixels_left;
-      nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5);
+    else if(msg.type==="pixel"){
+        pixels[msg.index]=1;
+        if(msg.session === currentSession){ pixelsLeft = Math.max(0, pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
+        drawBoard();
     }
-  }
-  else if(msg.type==="error"){
-    if(msg.session===undefined || msg.session===session){
-      alert(msg.message);
+    else if(msg.type==="info"){
+        if(msg.session === undefined || msg.session === currentSession){
+            pixelsLeft = msg.pixels_left;
+            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : (Date.now()/1000 + 5);
+        }
     }
-  }
+    else if(msg.type==="error"){
+        if(msg.session === undefined || msg.session === currentSession){ alert(msg.message); }
+    }
+    else if(msg.type==="clear_user"){
+        const target = msg.target;
+        for(let i=0;i<pixels.length;i++){
+            if(msg.sessionMap && msg.sessionMap[i]===target) pixels[i]=0;
+        }
+        drawBoard();
+    }
+    else if(msg.type==="clear"){ for(let i=0;i<pixels.length;i++) pixels[i]=0; drawBoard(); }
 };
 
-// --- BUTTONS ---
-// Generate TikTok token
-document.getElementById('getTokenBtn').addEventListener('click', ()=>{
-  ws.send(JSON.stringify({action:"get_token", session}));
+document.getElementById("getTokenBtn").addEventListener("click", ()=>{ ws.send(JSON.stringify({action:"get_token", session:currentSession})); });
+document.getElementById("loginBtn").addEventListener("click", ()=>{
+    const user = document.getElementById("usernameInput").value.trim();
+    const code = document.getElementById("returnCodeInput").value.trim();
+    if(!user || !code) return alert("Enter username and return code");
+    ws.send(JSON.stringify({action:"return_login", session:currentSession, username:user, return_code:code}));
 });
 
-// Return login
-document.getElementById('returnLoginBtn').addEventListener('click', ()=>{
-  const userInput=document.getElementById('usernameInput').value.trim();
-  const returnCode=document.getElementById('returnCodeInput').value.trim();
-  if(!userInput || !returnCode){ alert("Enter username and return code"); return; }
-  ws.send(JSON.stringify({
-    action:"return_login",
-    session,
-    username:userInput,
-    return_code:returnCode
-  }));
+// --- ADMIN PANEL LOGIC ---
+let adminKey = null;
+document.getElementById('adminLoginBtn').addEventListener('click', ()=>{
+    const key = prompt("Enter Admin Key:");
+    if(!key) return;
+    adminKey = key;
+    document.getElementById('adminPanel').style.display = 'block';
+});
+document.getElementById('closeAdminBtn').addEventListener('click', ()=>{ document.getElementById('adminPanel').style.display='none'; });
+document.getElementById('unverifyUserBtn').addEventListener('click', ()=>{
+    const user = document.getElementById('adminUsername').value.trim();
+    if(!user) return alert("Enter username");
+    ws.send(JSON.stringify({action:"admin", key:adminKey, command:"unverify", target:user}));
+});
+document.getElementById('clearUserPixelsBtn').addEventListener('click', ()=>{
+    const user = document.getElementById('adminUsername').value.trim();
+    if(!user) return alert("Enter username");
+    ws.send(JSON.stringify({action:"admin", key:adminKey, command:"clear_user", target:user}));
+});
+document.getElementById('clearAllBtn').addEventListener('click', ()=>{
+    ws.send(JSON.stringify({action:"admin", key:adminKey, command:"clear"}));
 });
 
 drawBoard();
 </script>
+
 </body>
 </html>
