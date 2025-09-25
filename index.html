@@ -214,6 +214,13 @@ ws.onmessage = e=>{
         statusDiv.textContent = verified ? `Welcome back ${username} | Pixels left: ${pixelsLeft}` : "Not verified";
     }, 5000);
 }
+    else if(msg.type==="clear_all"){
+        pixels.fill(0); // clear entire grid
+        drawBoard();
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = `All pixels cleared by admin`;
+        setTimeout(()=>{ statusDiv.textContent = verified ? `Welcome back ${username} | Pixels left: ${pixelsLeft}` : "Not verified"; }, 5000);
+    }
 
 
     else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession){ alert(msg.message); } }
