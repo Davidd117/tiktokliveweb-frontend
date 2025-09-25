@@ -74,7 +74,7 @@ for(let i=0;i<GRID_SIZE*GRID_SIZE;i++){
 
 // --- WebSocket ---
 function connect() {
-  ws = new WebSocket(`ws://${location.hostname}:8765`);
+  ws = new WebSocket(`ws://tiktokliveweb-production.up.railway.app`);
   ws.onopen = () => info.innerText = 'Connected to server';
   ws.onmessage = (msg) => handleMsg(JSON.parse(msg.data));
   ws.onclose = () => info.innerText = 'Disconnected';
@@ -150,3 +150,4 @@ document.getElementById('get_token_btn').onclick = () => {
 
 </body>
 </html>
+
