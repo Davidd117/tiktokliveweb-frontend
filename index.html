@@ -72,13 +72,14 @@ for(let i=0;i<GRID_SIZE*GRID_SIZE;i++){
   canvasContainer.appendChild(div);
 }
 
-// --- WebSocket ---
 function connect() {
-  ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
+  ws = new WebSocket(`wss://tiktokliveweb-production.up.railway.app`);
   ws.onopen = () => info.innerText = 'Connected to server';
   ws.onmessage = (msg) => handleMsg(JSON.parse(msg.data));
   ws.onclose = () => info.innerText = 'Disconnected';
+  ws.onerror = (err) => info.innerText = 'WebSocket error: ' + err.message;
 }
+
 
 connect();
 
@@ -150,5 +151,6 @@ document.getElementById('get_token_btn').onclick = () => {
 
 </body>
 </html>
+
 
 
