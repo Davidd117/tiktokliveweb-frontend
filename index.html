@@ -4,202 +4,149 @@
 <meta charset="UTF-8">
 <title>TikTok Live R/Place</title>
 <style>
-body { background:#111; color:white; text-align:center; font-family:Arial; }
-#canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
-canvas { width:100%; height:100%; display:block; }
-input, button { padding:5px; margin:5px; }
-#userInfo { margin-top: 10px; }
+  body { 
+    background:#111; 
+    color:white; 
+    text-align:center; 
+    font-family:Arial; 
+  }
+  #canvasContainer {
+    width: 500px;
+    height: 500px;
+    margin: 20px auto;
+    display: grid;
+    grid-template-columns: repeat(25, 1fr);
+    grid-template-rows: repeat(25, 1fr);
+    gap: 1px;
+  }
+  .pixel {
+    background: #222;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #login {
+    margin-bottom: 10px;
+  }
+  input, button {
+    margin: 5px;
+    padding: 5px;
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
-<h2>TikTok Live R/Place</h2>
 
-<div>
-  <button id="getTokenBtn">Generate Verification Token</button>
-</div>
-<div id="tokenDisplay">Token will appear here</div>
-<div id="status">Not verified</div>
-<div id="userInfo"></div>
+<h1>TikTok R/Place</h1>
 
-<div id="canvasContainer">
-  <canvas id="canvas"></canvas>
+<div id="login">
+  <input type="text" id="username" placeholder="Username">
+  <input type="text" id="return_code" placeholder="Return Code">
+  <button id="login_btn">Return Login</button>
+  <button id="get_token_btn">Get TikTok Token</button>
 </div>
+
+<div id="info"></div>
+
+<div id="canvasContainer"></div>
 
 <script>
-const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
+const GRID_SIZE = 25; // 25x25
+const canvasContainer = document.getElementById('canvasContainer');
+const info = document.getElementById('info');
 
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const gridSize = 1000;
-const pixels = new Uint8Array(gridSize*gridSize);
-canvas.width = canvas.clientWidth;
-canvas.height = canvas.clientHeight;
+let session = 'session_' + Math.floor(Math.random()*1000000);
+let username = '';
+let return_code = '';
+let ws;
 
-let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX=0, lastY=0, dragMoved=false;
-const dragThreshold = 5;
+let pixels = {}; // idx -> session
 
-let verified=false;
-let username=null;
-let pixelsLeft=0;
-let nextPixelTime=null;
-
-// --- View ---
-function resetView(){
-    minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
-    scale = minScale;
-    offsetX = (canvas.width - gridSize*scale)/2;
-    offsetY = (canvas.height - gridSize*scale)/2;
+// --- Build grid ---
+for(let i=0;i<GRID_SIZE*GRID_SIZE;i++){
+  const div = document.createElement('div');
+  div.classList.add('pixel');
+  div.dataset.idx = i;
+  div.addEventListener('click', () => placePixel(i));
+  canvasContainer.appendChild(div);
 }
-resetView();
-
-function clampOffsets(){
-    const maxOffsetX = 0, maxOffsetY=0;
-    const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
-    if(offsetX>maxOffsetX) offsetX=maxOffsetX;
-    if(offsetY>maxOffsetY) offsetY=maxOffsetY;
-    if(offsetX<minOffsetX) offsetX=minOffsetX;
-    if(offsetY<minOffsetY) offsetY=minOffsetY;
-}
-
-function drawBoard(){
-    ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
-    ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-    ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
-    if(scale>4){
-        ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
-        for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
-        for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
-    }
-    for(let i=0;i<pixels.length;i++){
-        if(pixels[i]){
-            const x=i%gridSize, y=Math.floor(i/gridSize);
-            ctx.fillStyle="#4ce0ff";
-            ctx.fillRect(x,y,1,1);
-        }
-    }
-}
-
-// --- Zoom & Pan ---
-canvas.addEventListener("wheel", e=>{
-    e.preventDefault();
-    const mouseX=(e.offsetX-offsetX)/scale;
-    const mouseY=(e.offsetY-offsetY)/scale;
-    const zoom=e.deltaY<0?1.1:0.9;
-    scale*=zoom;
-    scale=Math.min(Math.max(scale,minScale),40);
-    offsetX=e.offsetX - mouseX*scale;
-    offsetY=e.offsetY - mouseY*scale;
-    clampOffsets();
-    drawBoard();
-});
-
-canvas.addEventListener("mousedown", e=>{
-    if(e.button===0){ 
-        lastX=e.clientX; lastY=e.clientY; dragMoved=false; dragging=false;
-    }
-});
-
-canvas.addEventListener("mousemove", e=>{
-    if(e.buttons===1){
-        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold){
-            dragging=true;
-        }
-        if(dragging){
-            offsetX += e.clientX-lastX;
-            offsetY += e.clientY-lastY;
-            lastX=e.clientX; lastY=e.clientY;
-            clampOffsets();
-            drawBoard();
-        }
-    }
-});
-
-canvas.addEventListener("mouseup", e=>{
-    if(!dragging){
-        // Treat as click to place pixel
-        if(!verified) { alert("You are not verified!"); return; }
-        if(pixelsLeft <=0) { alert("No pixels available! Wait for cooldown."); return; }
-        const x=Math.floor((e.offsetX-offsetX)/scale);
-        const y=Math.floor((e.offsetY-offsetY)/scale);
-        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize}));
-        }
-    }
-    dragging=false;
-});
-
-// --- Update user info ---
-function updateUserInfo(){
-    const infoDiv = document.getElementById("userInfo");
-    let timeLeft = 0;
-    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
-    infoDiv.textContent = username ? 
-        `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
-        : `Not verified`;
-}
-
-// --- Countdown timer ---
-setInterval(()=>{
-    if(!verified || !nextPixelTime) return;
-    const now = Date.now()/1000;
-    if(now >= nextPixelTime){
-        pixelsLeft++;
-        nextPixelTime = now + 5; // cooldown in seconds, match server
-    }
-    updateUserInfo();
-}, 1000);
 
 // --- WebSocket ---
-ws.onopen = () => console.log("✅ WS connected!");
-ws.onmessage = e=>{
-    const msg = JSON.parse(e.data);
+function connect() {
+  ws = new WebSocket(`ws://${location.hostname}:8765`);
+  ws.onopen = () => info.innerText = 'Connected to server';
+  ws.onmessage = (msg) => handleMsg(JSON.parse(msg.data));
+  ws.onclose = () => info.innerText = 'Disconnected';
+}
 
-    if(msg.type === "init_pixels"){
-        for(const idx in msg.pixels){ pixels[idx]=1; }
-        drawBoard();
+connect();
+
+// --- Handle incoming messages ---
+function handleMsg(msg){
+  if(msg.type === 'init_pixels'){
+    pixels = msg.pixels || {};
+    updateGrid();
+  } else if(msg.type === 'pixel'){
+    pixels[msg.index] = msg.session;
+    updateGrid();
+  } else if(msg.type === 'info'){
+    info.innerText = msg.message;
+  } else if(msg.type === 'error'){
+    info.innerText = 'Error: ' + msg.message;
+  } else if(msg.type === 'verified'){
+    username = msg.username;
+    return_code = msg.return_code || '';
+    info.innerText = `Verified as ${username}. Pixels left: ${msg.pixels_left}. Return code: ${return_code}`;
+  }
+}
+
+// --- Update grid colors ---
+function updateGrid(){
+  document.querySelectorAll('.pixel').forEach(div=>{
+    const idx = div.dataset.idx;
+    if(pixels[idx]){
+      div.style.background = (pixels[idx] === session) ? 'white' : 'red';
+    } else {
+      div.style.background = '#222';
     }
-    else if(msg.type==="token"){
-        document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
-        document.getElementById("status").textContent="Type this token in TikTok Live to verify";
-    }
-    else if(msg.type==="verified"){
-        if(msg.session===currentSession){
-            verified=true;
-            username=msg.username;
-            pixelsLeft = msg.pixels_left ?? 1;
-            nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 5);
-            document.getElementById("status").textContent=`VERIFIED! Welcome back ${username}`;
-        }
-    }
-    else if(msg.type==="pixel"){
-        pixels[msg.index]=1;
-        if(msg.session === currentSession){
-            pixelsLeft = Math.max(0, pixelsLeft-1);
-            nextPixelTime = Date.now()/1000 + 5;
-        }
-        drawBoard();
-    }
-    else if(msg.type==="info"){
-        if(msg.session === currentSession){
-            pixelsLeft = msg.pixels_left;
-            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : (Date.now()/1000 + 5);
-        }
-    }
-    else if(msg.type==="error"){
-        if(msg.session === undefined || msg.session === currentSession){
-            alert(msg.message);
-        }
-    }
+  });
+}
+
+// --- Place pixel ---
+function placePixel(idx){
+  if(!username){
+    alert('Login first!');
+    return;
+  }
+  ws.send(JSON.stringify({
+    action: 'place_pixel',
+    session: session,
+    index: idx
+  }));
+}
+
+// --- Buttons ---
+document.getElementById('login_btn').onclick = () => {
+  username = document.getElementById('username').value.trim();
+  return_code = document.getElementById('return_code').value.trim();
+  if(!username || !return_code) return alert('Enter username and return code');
+  ws.send(JSON.stringify({
+    action: 'return_login',
+    session: session,
+    username,
+    return_code
+  }));
 };
 
-// --- Generate token ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"get_token", session:currentSession}));
-});
-
-drawBoard();
+document.getElementById('get_token_btn').onclick = () => {
+  ws.send(JSON.stringify({
+    action: 'get_token',
+    session
+  }));
+  info.innerText = 'Token requested. Check TikTok chat for it!';
+};
 </script>
+
 </body>
 </html>
