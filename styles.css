@@ -1,0 +1,31 @@
+.palette-section {
+  margin-bottom: 10px;
+}
+
+.colors {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.color {
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.color.locked {
+  background: repeating-linear-gradient(
+    45deg,
+    #ccc,
+    #ccc 5px,
+    #eee 5px,
+    #eee 10px
+  );
+  cursor: not-allowed;
+}
+
+.locked {
+  opacity: 0.5;
+}
