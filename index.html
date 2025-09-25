@@ -9,6 +9,7 @@
   canvas { width:100%; height:100%; display:block; }
   input, button { padding:5px; margin:5px; }
   #userInfo { margin-top: 10px; }
+  #messages { color:yellow; margin-top:10px; min-height:18px; }
   #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
 </style>
 </head>
@@ -34,6 +35,7 @@
 
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
+<div id="messages"></div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -173,12 +175,17 @@ setInterval(()=>{
 
 // --- WebSocket ---
 ws.onopen = ()=> console.log("✅ WS connected!");
-ws.onmessage = e=>{
+ws.onmessage = async e=>{
     const msg = JSON.parse(e.data);
-    if(msg.type==="init_pixels"){ for(const idx in msg.pixels){ pixels[idx]=1; } drawBoard(); }
+    const messagesDiv = document.getElementById("messages");
+
+    if(msg.type==="init_pixels"){ 
+        for(const idx in msg.pixels){ pixels[idx]=1; } 
+        drawBoard(); 
+    }
     else if(msg.type==="token"){
         verificationToken = msg.token;
-        returnToken = msg.return_token; // server must provide this
+        returnToken = msg.return_token;
         document.getElementById("verificationToken").value = verificationToken;
         document.getElementById("returnToken").value = returnToken;
         document.getElementById("status").textContent = "Type verification token in TikTok chat!";
@@ -192,6 +199,7 @@ ws.onmessage = e=>{
             returnToken = msg.return_token ?? returnToken;
             document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
             document.getElementById("returnToken").value = returnToken;
+            messagesDiv.textContent = ""; // clear any previous message
         }
     }
     else if(msg.type==="pixel"){
@@ -199,7 +207,12 @@ ws.onmessage = e=>{
         if(msg.session===currentSession){ pixelsLeft = Math.max(0,pixelsLeft-1); nextPixelTime = Date.now()/1000 + 5; }
         drawBoard();
     }
-    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession){ alert(msg.message); } }
+    else if(msg.type==="error"){
+        // Only display the error if it matches this session
+        if(msg.session===undefined || msg.session===currentSession){
+            messagesDiv.textContent = msg.message;
+        }
+    }
 };
 
 // --- Generate verification token ---
