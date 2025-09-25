@@ -26,12 +26,7 @@ input, button { padding:5px; margin:5px; }
 </div>
 
 <script>
-let currentUser = localStorage.getItem("session_id");
-if(!currentUser){
-    currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
-    localStorage.setItem("session_id", currentUser);
-}
-
+const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
 const canvas = document.getElementById("canvas");
@@ -46,7 +41,9 @@ let dragging = false, lastX, lastY;
 let verified = false;
 let pixelsLeft = 0;
 let nextPixelTime = null;
+let username = null;
 
+// --- View Setup ---
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
@@ -54,7 +51,6 @@ function resetView(){
     offsetY = (canvas.height - gridSize*scale)/2;
 }
 resetView();
-
 function clampOffsets(){
     const maxOffsetX = 0, maxOffsetY=0;
     const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
@@ -64,6 +60,7 @@ function clampOffsets(){
     if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
 
+// --- Draw Board ---
 function drawBoard(){
     ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
     ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
@@ -119,11 +116,21 @@ function updateUserInfo(){
     const infoDiv = document.getElementById("userInfo");
     let timeLeft = 0;
     if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
-    infoDiv.textContent = `User: ${currentUser} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
+    infoDiv.textContent = `User: ${username||currentUser} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
 }
 
-// --- Countdown timer ---
-setInterval(updateUserInfo, 1000);
+// --- Countdown + auto-add pixel ---
+setInterval(()=>{
+    if(!verified || !nextPixelTime) return;
+    let timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    if(timeLeft===0){
+        pixelsLeft++;
+        nextPixelTime = Date.now()/1000 + 5; // cooldown in sec
+        // update server
+        ws.send(JSON.stringify({action:"update_pixels", session: currentUser, pixels_left: pixelsLeft, next_pixel_time: nextPixelTime}));
+    }
+    updateUserInfo();
+}, 1000);
 
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
@@ -141,9 +148,10 @@ ws.onmessage = e=>{
     else if(msg.type==="verified"){
         if(msg.session===currentUser){
             verified=true;
+            username = msg.username;
             pixelsLeft = msg.pixels_left!==undefined?msg.pixels_left:1;
             nextPixelTime = msg.next_pixel_time!==undefined?msg.next_pixel_time:null;
-            document.getElementById("status").textContent="VERIFIED! You can place pixels";
+            document.getElementById("status").textContent=`Welcome back ${username}! You can place pixels.`;
         }
     }
     else if(msg.type==="pixel"){
