@@ -156,7 +156,7 @@ ws.onmessage = e=>{
             // Update user info
             const userData = msg.username || "Unknown"; // if backend sends username
             updateUserInfo(userData, 1); 
-            startCooldown(600); // 10 min default
+            startCooldown(5); // 10 min default
         }
     } 
     else if(msg.type==="pixel"){
@@ -195,3 +195,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
