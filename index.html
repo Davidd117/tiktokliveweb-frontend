@@ -26,7 +26,12 @@ input, button { padding:5px; margin:5px; }
 </div>
 
 <script>
-const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
+let currentUser = localStorage.getItem("session_id");
+if(!currentUser){
+    currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
+    localStorage.setItem("session_id", currentUser);
+}
+
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
 const canvas = document.getElementById("canvas");
@@ -136,16 +141,16 @@ ws.onmessage = e=>{
     else if(msg.type==="verified"){
         if(msg.session===currentUser){
             verified=true;
-            pixelsLeft = 1;
-            nextPixelTime = null;
-            document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
+            pixelsLeft = msg.pixels_left!==undefined?msg.pixels_left:1;
+            nextPixelTime = msg.next_pixel_time!==undefined?msg.next_pixel_time:null;
+            document.getElementById("status").textContent="VERIFIED! You can place pixels";
         }
     }
     else if(msg.type==="pixel"){
         pixels[msg.index]=1;
         if(msg.session === currentUser){
             pixelsLeft = Math.max(0, pixelsLeft-1);
-            nextPixelTime = Date.now()/1000 + 10*60; // reset cooldown locally
+            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : null;
         }
         drawBoard();
     }
