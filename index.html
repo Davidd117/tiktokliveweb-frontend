@@ -165,7 +165,7 @@ ws.onmessage = e=>{
 
         if(msg.session === currentUser){
             updateUserInfo(document.getElementById("usernameDisplay").textContent.replace("Username: ",""), 0);
-            startCooldown(600);
+            startCooldown(5);
         }
     } 
     else if(msg.type==="clear"){
@@ -180,7 +180,7 @@ ws.onmessage = e=>{
                 // Show returning user info and start timer
                 const userData = msg.username || document.getElementById("usernameDisplay").textContent.replace("Username: ","");
                 updateUserInfo(userData, 1);
-                startCooldown(600);
+                startCooldown(5);
             }
         }
     }
@@ -195,4 +195,5 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
