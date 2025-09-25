@@ -15,10 +15,9 @@ input, button { padding:5px; margin:5px; }
 <h2>TikTok Live R/Place</h2>
 
 <div>
-  <input type="text" id="usernameInput" placeholder="Enter your TikTok username"/>
-  <input type="text" id="tokenInput" placeholder="Enter your TikTok token"/>
-  <button id="verifyBtn">Verify</button>
+  <button id="getTokenBtn">Generate Verification Token</button>
 </div>
+<div id="tokenDisplay">Token will appear here</div>
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
 
@@ -27,7 +26,7 @@ input, button { padding:5px; margin:5px; }
 </div>
 
 <script>
-const currentSession = 'session_' + Math.random().toString(36).substring(2,10);
+const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 
 const canvas = document.getElementById("canvas");
@@ -38,12 +37,15 @@ canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
-let dragging = false, lastX, lastY;
-let verified = false;
-let username = null;
-let pixelsLeft = 0;
-let nextPixelTime = null;
+let dragging=false, lastX=0, lastY=0, dragMoved=false;
+const dragThreshold = 5;
 
+let verified=false;
+let username=null;
+let pixelsLeft=0;
+let nextPixelTime=null;
+
+// --- View ---
 function resetView(){
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
@@ -92,39 +94,62 @@ canvas.addEventListener("wheel", e=>{
     clampOffsets();
     drawBoard();
 });
-canvas.addEventListener("mousedown", e=>{
-    if(e.button===0){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing";}
-});
-canvas.addEventListener("mousemove", e=>{
-    if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
-});
-canvas.addEventListener("mouseup", e=>{dragging=false; canvas.style.cursor="grab";});
 
-// --- Place pixel ---
-canvas.addEventListener("click", e=>{
-    if(!verified) { alert("You are not verified!"); return; }
-    if(pixelsLeft <= 0) { alert("No pixels available! Wait for cooldown."); return; }
-    const x=Math.floor((e.offsetX-offsetX)/scale);
-    const y=Math.floor((e.offsetY-offsetY)/scale);
-    if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-        ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize}));
+canvas.addEventListener("mousedown", e=>{
+    if(e.button===0){ 
+        lastX=e.clientX; lastY=e.clientY; dragMoved=false; dragging=false;
     }
 });
 
-// --- Update user info display ---
+canvas.addEventListener("mousemove", e=>{
+    if(e.buttons===1){
+        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold){
+            dragging=true;
+        }
+        if(dragging){
+            offsetX += e.clientX-lastX;
+            offsetY += e.clientY-lastY;
+            lastX=e.clientX; lastY=e.clientY;
+            clampOffsets();
+            drawBoard();
+        }
+    }
+});
+
+canvas.addEventListener("mouseup", e=>{
+    if(!dragging){
+        // Treat as click to place pixel
+        if(!verified) { alert("You are not verified!"); return; }
+        if(pixelsLeft <=0) { alert("No pixels available! Wait for cooldown."); return; }
+        const x=Math.floor((e.offsetX-offsetX)/scale);
+        const y=Math.floor((e.offsetY-offsetY)/scale);
+        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
+            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize}));
+        }
+    }
+    dragging=false;
+});
+
+// --- Update user info ---
 function updateUserInfo(){
     const infoDiv = document.getElementById("userInfo");
     let timeLeft = 0;
     if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
-    if(verified){
-        infoDiv.textContent = `User: ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
-    } else {
-        infoDiv.textContent = '';
-    }
+    infoDiv.textContent = username ? 
+        `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
+        : `Not verified`;
 }
 
 // --- Countdown timer ---
-setInterval(updateUserInfo, 1000);
+setInterval(()=>{
+    if(!verified || !nextPixelTime) return;
+    const now = Date.now()/1000;
+    if(now >= nextPixelTime){
+        pixelsLeft++;
+        nextPixelTime = now + 5; // cooldown in seconds, match server
+    }
+    updateUserInfo();
+}, 1000);
 
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
@@ -135,42 +160,43 @@ ws.onmessage = e=>{
         for(const idx in msg.pixels){ pixels[idx]=1; }
         drawBoard();
     }
+    else if(msg.type==="token"){
+        document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
+        document.getElementById("status").textContent="Type this token in TikTok Live to verify";
+    }
     else if(msg.type==="verified"){
-        if(msg.session === currentSession){
+        if(msg.session===currentSession){
             verified=true;
-            username = msg.username;
-            pixelsLeft = msg.pixels_left || 1;
-            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : null;
-            document.getElementById("status").textContent = `Welcome back ${username}!`;
+            username=msg.username;
+            pixelsLeft = msg.pixels_left ?? 1;
+            nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 5);
+            document.getElementById("status").textContent=`VERIFIED! Welcome back ${username}`;
         }
     }
     else if(msg.type==="pixel"){
         pixels[msg.index]=1;
         if(msg.session === currentSession){
             pixelsLeft = Math.max(0, pixelsLeft-1);
-            nextPixelTime = Date.now()/1000 + 10; // example cooldown locally
+            nextPixelTime = Date.now()/1000 + 5;
         }
         drawBoard();
     }
     else if(msg.type==="info"){
         if(msg.session === currentSession){
             pixelsLeft = msg.pixels_left;
-            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : nextPixelTime;
+            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : (Date.now()/1000 + 5);
         }
     }
     else if(msg.type==="error"){
-        if(msg.session===undefined || msg.session===currentSession){
+        if(msg.session === undefined || msg.session === currentSession){
             alert(msg.message);
         }
     }
 };
 
-// --- Verify button ---
-document.getElementById("verifyBtn").addEventListener("click", ()=>{
-    const token = document.getElementById("tokenInput").value.trim();
-    const uname = document.getElementById("usernameInput").value.trim();
-    if(!token || !uname){ alert("Enter username and token"); return; }
-    ws.send(JSON.stringify({action:"verify", token:token, username:uname, session:currentSession}));
+// --- Generate token ---
+document.getElementById("getTokenBtn").addEventListener("click", ()=>{
+    ws.send(JSON.stringify({action:"get_token", session:currentSession}));
 });
 
 drawBoard();
