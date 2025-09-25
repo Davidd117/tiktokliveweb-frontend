@@ -1,184 +1,180 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>TikTok Live R/Place</title>
-<style>
-body { background:#111; color:white; text-align:center; font-family:Arial; }
-#canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
-canvas { width:100%; height:100%; display:block; }
-input, button { padding:5px; margin:5px; }
-#userInfo { margin-top: 10px; }
-</style>
-</head>
-<body>
-<h2>TikTok Live R/Place</h2>
+import asyncio
+import websockets
+import json
+import random
+import os
+from datetime import datetime, timedelta
 
-<div>
-  <button id="getTokenBtn">Generate Verification Token</button>
-</div>
-<div id="tokenDisplay">Token will appear here</div>
-<div id="status">Not verified</div>
-<div id="userInfo"></div>
+from TikTokLive import TikTokLiveClient
+from TikTokLive.types.events import ConnectEvent, FollowEvent, CommentEvent
 
-<div id="canvasContainer">
-  <canvas id="canvas"></canvas>
-</div>
+# --- CONFIG ---
+PORT = int(os.getenv("PORT", 8080))
+TIKTOK_USERNAME = os.getenv("TIKTOK_USERNAME", "your_tiktok_username")
+COOLDOWN = 5  # 10 minutes
+PIXEL_REPLENISH = 1
 
-<script>
-const currentUser = 'session_' + Math.random().toString(36).substring(2, 10);
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
+# --- STATE ---
+client = TikTokLiveClient(unique_id=TIKTOK_USERNAME)
+pixels = set()  # store placed pixels
+sessions = {}   # session_id -> websocket
+active_tokens = {}  # token -> session
+user_following_status = {}
+data = {"verified_sessions": {}}
 
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const gridSize = 1000;
-const pixels = new Uint8Array(gridSize*gridSize);
-canvas.width = canvas.clientWidth;
-canvas.height = canvas.clientHeight;
+# --- Helpers ---
+def save_data():
+    with open("data.json", "w") as f:
+        json.dump(data, f)
 
-let scale, minScale, offsetX, offsetY;
-let dragging = false, lastX, lastY;
-let verified = false;
-let pixelsLeft = 0;
-let nextPixelTime = null; // in seconds (unix timestamp)
-const cooldown = 5;   // 10 minutes
+def load_data():
+    global data
+    if os.path.exists("data.json"):
+        with open("data.json", "r") as f:
+            data = json.load(f)
 
-function resetView(){
-    minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
-    scale = minScale;
-    offsetX = (canvas.width - gridSize*scale)/2;
-    offsetY = (canvas.height - gridSize*scale)/2;
-}
-resetView();
+async def broadcast(message):
+    msg = json.dumps(message)
+    for ws in list(sessions.values()):
+        try:
+            await ws.send(msg)
+        except:
+            pass
 
-function clampOffsets(){
-    const maxOffsetX = 0, maxOffsetY=0;
-    const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
-    if(offsetX>maxOffsetX) offsetX=maxOffsetX;
-    if(offsetY>maxOffsetY) offsetY=maxOffsetY;
-    if(offsetX<minOffsetX) offsetX=minOffsetX;
-    if(offsetY<minOffsetY) offsetY=minOffsetY;
-}
+async def check_follow(username: str) -> bool:
+    # Fake: always return True (implement real check with TikTok API if available)
+    return True
 
-function drawBoard(){
-    ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
-    ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-    ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
-    if(scale>4){
-        ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
-        for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
-        for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
-    }
-    for(let i=0;i<pixels.length;i++){
-        if(pixels[i]){
-            const x=i%gridSize, y=Math.floor(i/gridSize);
-            ctx.fillStyle="#4ce0ff";
-            ctx.fillRect(x,y,1,1);
+async def replenish_pixels_task():
+    while True:
+        now = datetime.utcnow().timestamp()
+        for session_id, info in data["verified_sessions"].items():
+            if info["pixels_left"] <= 0 and info["next_pixel_time"]:
+                if now >= info["next_pixel_time"]:
+                    info["pixels_left"] = PIXEL_REPLENISH
+                    info["next_pixel_time"] = None
+                    await broadcast({
+                        "type": "info",
+                        "session": session_id,
+                        "pixels_left": info["pixels_left"],
+                        "next_pixel_time": None
+                    })
+        save_data()
+        await asyncio.sleep(5)
+
+# --- WebSocket handler ---
+async def ws_handler(ws, path):
+    session_id = None
+    try:
+        async for msg in ws:
+            data_in = json.loads(msg)
+            action = data_in.get("action")
+
+            if action == "get_token":
+                session_id = data_in["session"]
+                sessions[session_id] = ws
+                token = ''.join(random.choices("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", k=6))
+                active_tokens[token] = session_id
+                await ws.send(json.dumps({"type": "token", "token": token}))
+
+            elif action == "place_pixel":
+                session_id = data_in["session"]
+                idx = data_in["index"]
+
+                if session_id not in data["verified_sessions"]:
+                    await ws.send(json.dumps({"type": "error", "message": "Not verified!", "session": session_id}))
+                    continue
+
+                info = data["verified_sessions"][session_id]
+                if info["pixels_left"] <= 0:
+                    await ws.send(json.dumps({"type": "error", "message": "No pixels left, wait cooldown!", "session": session_id}))
+                    continue
+
+                # Deduct pixel
+                info["pixels_left"] -= 1
+                if info["pixels_left"] <= 0:
+                    info["next_pixel_time"] = datetime.utcnow().timestamp() + COOLDOWN
+
+                pixels.add(idx)
+                await broadcast({"type": "pixel", "index": idx, "session": session_id})
+                await ws.send(json.dumps({
+                    "type": "info",
+                    "session": session_id,
+                    "pixels_left": info["pixels_left"],
+                    "next_pixel_time": info["next_pixel_time"]
+                }))
+                save_data()
+
+    except Exception as e:
+        print("WS error:", e)
+    finally:
+        if session_id and session_id in sessions:
+            del sessions[session_id]
+
+# --- TikTok Events ---
+@client.on(ConnectEvent)
+async def on_connect(event: ConnectEvent):
+    print(f"✅ Connected to TikTok @{TIKTOK_USERNAME}")
+
+@client.on(FollowEvent)
+async def on_follow(event: FollowEvent):
+    username = event.user.unique_id
+    user_following_status[username] = True
+    print(f"➕ {username} followed")
+
+@client.on(CommentEvent)
+async def on_comment(event: CommentEvent):
+    username = event.user.unique_id
+    comment = event.comment.strip()
+
+    if comment in active_tokens:
+        session_id = active_tokens[comment]
+        if not session_id:
+            return
+
+        verified_usernames = [v["username"] for v in data["verified_sessions"].values()]
+        if username in verified_usernames:
+            await broadcast({
+                "type": "error",
+                "message": f"{username} has already been verified!",
+                "session": session_id,
+                "username": username
+            })
+            del active_tokens[comment]
+            return
+
+        following = user_following_status.get(username, False) or await check_follow(username)
+        if not following:
+            await broadcast({
+                "type": "error",
+                "message": "You must follow to verify!",
+                "session": session_id
+            })
+            return
+
+        data["verified_sessions"][session_id] = {
+            "pixels_left": PIXEL_REPLENISH,
+            "username": username,
+            "next_pixel_time": None
         }
-    }
-}
+        save_data()
+        del active_tokens[comment]
+        print(f"[Server] {username} verified session {session_id}")
 
-// --- Zoom & Pan ---
-canvas.addEventListener("wheel", e=>{
-    e.preventDefault();
-    const mouseX=(e.offsetX-offsetX)/scale;
-    const mouseY=(e.offsetY-offsetY)/scale;
-    const zoom=e.deltaY<0?1.1:0.9;
-    scale*=zoom;
-    scale=Math.min(Math.max(scale,minScale),40);
-    offsetX=e.offsetX - mouseX*scale;
-    offsetY=e.offsetY - mouseY*scale;
-    clampOffsets();
-    drawBoard();
-});
-canvas.addEventListener("mousedown", e=>{
-    if(e.button===0){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.style.cursor="grabbing";}
-});
-canvas.addEventListener("mousemove", e=>{
-    if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
-});
-canvas.addEventListener("mouseup", e=>{dragging=false; canvas.style.cursor="grab";});
+        await broadcast({
+            "type": "verified",
+            "session": session_id,
+            "username": username
+        })
 
-// --- Place pixel ---
-canvas.addEventListener("click", e=>{
-    if(!verified) { alert("You are not verified!"); return; }
-    if(pixelsLeft <= 0) { alert("No pixels available! Wait for cooldown."); return; }
-    const x=Math.floor((e.offsetX-offsetX)/scale);
-    const y=Math.floor((e.offsetY-offsetY)/scale);
-    if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-        ws.send(JSON.stringify({action:"place_pixel", session:currentUser, index:x+y*gridSize}));
-    }
-});
+# --- MAIN ---
+async def main():
+    load_data()
+    print(f"Server running on port {PORT}")
+    asyncio.create_task(replenish_pixels_task())
+    asyncio.create_task(client.start())
+    await websockets.serve(ws_handler, "0.0.0.0", PORT)
+    await asyncio.Future()
 
-// --- Update user info display ---
-function updateUserInfo(){
-    const now = Date.now()/1000;
-    let timeLeft = 0;
-    if(nextPixelTime){
-        timeLeft = Math.max(0, Math.floor(nextPixelTime - now));
-
-        // If cooldown expired, grant a pixel and restart cooldown
-        if(timeLeft === 0){
-            pixelsLeft++;
-            nextPixelTime = now + cooldown;
-        }
-    }
-    const infoDiv = document.getElementById("userInfo");
-    infoDiv.textContent = `User: ${currentUser} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`;
-}
-
-// --- Countdown timer ---
-setInterval(updateUserInfo, 1000);
-
-// --- WebSocket ---
-ws.onopen = () => console.log("✅ WS connected!");
-ws.onmessage = e=>{
-    const msg = JSON.parse(e.data);
-
-    if(msg.type === "init_pixels"){
-        for(const idx in msg.pixels){ pixels[idx]=1; }
-        drawBoard();
-    }
-    else if(msg.type==="token"){
-        document.getElementById("tokenDisplay").textContent="Your token: "+msg.token;
-        document.getElementById("status").textContent="Type this token in TikTok Live to verify";
-    }
-    else if(msg.type==="verified"){
-        if(msg.session===currentUser){
-            verified=true;
-            pixelsLeft = 1;
-            nextPixelTime = Date.now()/1000 + cooldown;
-            document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
-        }
-    }
-    else if(msg.type==="pixel"){
-        pixels[msg.index]=1;
-        if(msg.session === currentUser){
-            pixelsLeft = Math.max(0, pixelsLeft-1);
-            // Don’t manually reset cooldown here — timer loop handles it
-        }
-        drawBoard();
-    }
-    else if(msg.type==="info"){
-        if(msg.session === currentUser){
-            pixelsLeft = msg.pixels_left;
-            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : null;
-        }
-    }
-    else if(msg.type==="error"){
-        if(msg.session === undefined || msg.session === currentUser){
-            alert(msg.message);
-        }
-    }
-};
-
-// --- Generate token ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"get_token", session:currentUser}));
-});
-
-drawBoard();
-</script>
-</body>
-</html>
-
+if __name__ == "__main__":
+    asyncio.run(main())
