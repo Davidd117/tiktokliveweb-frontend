@@ -118,13 +118,7 @@ function updateUserInfo(){
 }
 
 // --- Countdown timer ---
-setInterval(()=>{
-    if(nextPixelTime && Date.now()/1000 >= nextPixelTime){
-        pixelsLeft += 1;
-        nextPixelTime = Date.now()/1000 + 5; // start next cooldown immediately
-    }
-    updateUserInfo();
-}, 1000);
+setInterval(updateUserInfo, 1000);
 
 // --- WebSocket ---
 ws.onopen = () => console.log("✅ WS connected!");
@@ -142,23 +136,23 @@ ws.onmessage = e=>{
     else if(msg.type==="verified"){
         if(msg.session===currentUser){
             verified=true;
-            pixelsLeft = msg.pixels_left !== undefined ? msg.pixels_left : 1;
-            nextPixelTime = msg.next_pixel_time !== undefined ? msg.next_pixel_time : null;
-            document.getElementById("status").textContent="VERIFIED! You can place pixels";
+            pixelsLeft = 1;
+            nextPixelTime = null;
+            document.getElementById("status").textContent="VERIFIED! You can place 1 pixel";
         }
     }
     else if(msg.type==="pixel"){
         pixels[msg.index]=1;
         if(msg.session === currentUser){
             pixelsLeft = Math.max(0, pixelsLeft-1);
-            nextPixelTime = Date.now()/1000 + 10*60; // start next cooldown immediately
+            nextPixelTime = Date.now()/1000 + 10*60; // reset cooldown locally
         }
         drawBoard();
     }
     else if(msg.type==="info"){
         if(msg.session === currentUser){
-            pixelsLeft = msg.pixels_left !== undefined ? msg.pixels_left : pixelsLeft;
-            nextPixelTime = msg.next_pixel_time !== undefined ? msg.next_pixel_time : nextPixelTime;
+            pixelsLeft = msg.pixels_left;
+            nextPixelTime = msg.next_pixel_time ? msg.next_pixel_time : null;
         }
     }
     else if(msg.type==="error"){
