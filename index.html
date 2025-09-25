@@ -215,28 +215,50 @@ document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
     ws.send(JSON.stringify({action:"verify", username:uname, token:rtoken, session:currentSession}));
 });
 
-// --- Admin login ---
-document.getElementById("adminLoginBtn").addEventListener("click", ()=> {
-    document.getElementById("adminPanel").style.display="block";
+// --- Admin login panel ---
+document.getElementById("adminLoginBtn").addEventListener("click", () => {
+    document.getElementById("adminPanel").style.display = "block";
 });
-document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
+
+// --- Verify admin key first ---
+document.getElementById("adminVerifyBtn").addEventListener("click", () => {
     const key = document.getElementById("adminKeyInput").value.trim();
     if(!key) return alert("Enter admin key");
-    document.getElementById("adminControls").style.display="block";
+
+    // send a check request to server
+    ws.send(JSON.stringify({ action:"admin", key:key, command:"check", session:currentSession }));
 });
-document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
-    const user = document.getElementById("adminUsername").value.trim();
-    if(!user) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", username:user}));
+
+// --- Handle server reply for admin key ---
+ws.addEventListener("message", e => {
+    const msg = JSON.parse(e.data);
+    if(msg.type === "info" && msg.message === "Admin key correct") {
+        document.getElementById("adminControls").style.display = "block";
+        alert("Admin verified!");
+    }
+    else if(msg.type === "error" && msg.message === "Invalid admin key") {
+        alert("Invalid admin key!");
+        document.getElementById("adminControls").style.display = "none";
+    }
 });
-document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
-    const user = document.getElementById("adminUsername").value.trim();
-    if(!user) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", username:user}));
+
+// --- Admin actions ---
+document.getElementById("clearUserPixelsBtn").addEventListener("click", () => {
+    const target = document.getElementById("adminUsername").value.trim();
+    if(!target) return alert("Enter username");
+    ws.send(JSON.stringify({ action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target }));
 });
-document.getElementById("clearAllBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
+
+document.getElementById("unverifyUserBtn").addEventListener("click", () => {
+    const target = document.getElementById("adminUsername").value.trim();
+    if(!target) return alert("Enter username");
+    ws.send(JSON.stringify({ action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target }));
 });
+
+document.getElementById("clearAllBtn").addEventListener("click", () => {
+    ws.send(JSON.stringify({ action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear" }));
+});
+
 
 drawBoard();
 </script>
