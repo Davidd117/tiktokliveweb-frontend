@@ -10,6 +10,12 @@
   input, button { padding:5px; margin:5px; }
   #userInfo { margin-top: 10px; }
   #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
+  
+  /* Color Palette */
+  #palette-panel { display:none; background:#222; padding:10px; border:1px solid #555; margin:15px auto; width:320px; text-align:center; }
+  .colors { display:flex; gap:5px; justify-content:center; flex-wrap:wrap; }
+  .color { width:30px; height:30px; cursor:pointer; border-radius:4px; border:2px solid transparent; }
+  .color.selected { border:2px solid #fff; }
 </style>
 </head>
 <body>
@@ -34,6 +40,20 @@
 
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
+
+<div id="palette-panel">
+  <h3>🎨 Color Palette</h3>
+  <div class="colors" id="colorPalette">
+    <div class="color selected" data-color="#4ce0ff" style="background:#4ce0ff;"></div>
+    <div class="color" data-color="#ff0000" style="background:#ff0000;"></div>
+    <div class="color" data-color="#00ff00" style="background:#00ff00;"></div>
+    <div class="color" data-color="#0000ff" style="background:#0000ff;"></div>
+    <div class="color" data-color="#ffff00" style="background:#ffff00;"></div>
+    <div class="color" data-color="#ff00ff" style="background:#ff00ff;"></div>
+    <div class="color" data-color="#00ffff" style="background:#00ffff;"></div>
+    <div class="color" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;"></div>
+  </div>
+</div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -60,6 +80,7 @@ const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
+const pixels = new Array(gridSize*gridSize); // store color as string
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
@@ -74,9 +95,8 @@ let nextPixelTime=null;
 let returnToken=null;
 let verificationToken=null;
 
-// --- PIXELS STORAGE ---
-// store as {index: {user, color}}
-const pixels = {}; 
+// --- Selected color ---
+let activeColor = "#4ce0ff"; // default
 
 // --- Canvas view ---
 function resetView(){
@@ -86,7 +106,6 @@ function resetView(){
     offsetY = (canvas.height - gridSize*scale)/2;
 }
 resetView();
-
 function clampOffsets(){
     const maxOffsetX = 0, maxOffsetY=0;
     const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
@@ -95,27 +114,23 @@ function clampOffsets(){
     if(offsetX<minOffsetX) offsetX=minOffsetX;
     if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
-
 function drawBoard(){
     ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
     ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
     ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
-
     if(scale>4){
         ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
         for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
         for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
     }
-
-    for(const i in pixels){
-        const x = i % gridSize;
-        const y = Math.floor(i / gridSize);
-        ctx.fillStyle = pixels[i].color || "#4ce0ff";
-        ctx.fillRect(x,y,1,1);
+    for(let i=0;i<pixels.length;i++){
+        if(pixels[i]){
+            const x=i%gridSize, y=Math.floor(i/gridSize);
+            ctx.fillStyle=pixels[i];
+            ctx.fillRect(x,y,1,1);
+        }
     }
 }
-
-// --- Canvas interaction ---
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
     const mouseX=(e.offsetX-offsetX)/scale;
@@ -128,22 +143,13 @@ canvas.addEventListener("wheel", e=>{
     clampOffsets();
     drawBoard();
 });
-
 canvas.addEventListener("mousedown", e=>{
     if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
 });
 canvas.addEventListener("mousemove", e=>{
     if(e.buttons===1){
-        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold){
-            dragging=true;
-        }
-        if(dragging){
-            offsetX += e.clientX-lastX;
-            offsetY += e.clientY-lastY;
-            lastX=e.clientX; lastY=e.clientY;
-            clampOffsets();
-            drawBoard();
-        }
+        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold) dragging=true;
+        if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
     }
 });
 canvas.addEventListener("mouseup", e=>{
@@ -153,14 +159,22 @@ canvas.addEventListener("mouseup", e=>{
         const x=Math.floor((e.offsetX-offsetX)/scale);
         const y=Math.floor((e.offsetY-offsetY)/scale);
         if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-            const color = prompt("Enter hex color for pixel:", "#4ce0ff") || "#4ce0ff";
-            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize, color}));
+            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize, color:activeColor}));
         }
     }
     dragging=false;
 });
 
-// --- Update user info ---
+// --- Color selection ---
+document.querySelectorAll("#colorPalette .color").forEach(c=>{
+    c.addEventListener("click", ()=>{
+        document.querySelectorAll("#colorPalette .color").forEach(cl=>cl.classList.remove("selected"));
+        c.classList.add("selected");
+        activeColor = c.getAttribute("data-color");
+    });
+});
+
+// --- User info ---
 function updateUserInfo(){
     const infoDiv = document.getElementById("userInfo");
     let timeLeft = 0;
@@ -174,10 +188,7 @@ function updateUserInfo(){
 setInterval(()=>{
     if(!verified || !nextPixelTime) return;
     const now = Date.now()/1000;
-    if(now >= nextPixelTime){
-        pixelsLeft++;
-        nextPixelTime = now + 5;
-    }
+    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+5; }
     updateUserInfo();
 }, 1000);
 
@@ -185,91 +196,49 @@ setInterval(()=>{
 ws.onopen = ()=> console.log("✅ WS connected!");
 ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
-
-    if(msg.type==="init_pixels"){
-        for(const idx in msg.pixels){
-            pixels[idx] = msg.pixels[idx];
-        }
-        drawBoard();
-    }
-    else if(msg.type==="pixel"){
-        pixels[msg.index] = {user: msg.user, color: msg.color};
-        if(msg.session===currentSession){ 
-            pixelsLeft = Math.max(0,pixelsLeft-1);
-            nextPixelTime = Date.now()/1000 + 5;
-        }
-        drawBoard();
-    }
-    else if(msg.type==="verified" && msg.session===currentSession){
-        verified=true;
-        username=msg.username;
-        pixelsLeft = msg.pixels_left ?? 1;
-        nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 5);
-        returnToken = msg.return_token ?? returnToken;
-        document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
-        document.getElementById("returnToken").value = returnToken;
-    }
-    else if(msg.type==="clear_user"){  
-        const removed = msg.sessionMap;
-        for(const idx in removed){
-            delete pixels[idx];
-        }
-        drawBoard();
-        const statusDiv = document.getElementById("status");
-        statusDiv.textContent = `Cleared ${Object.keys(removed).length} pixels for user: ${msg.target}`;
-        setTimeout(()=>{ statusDiv.textContent = verified ? `Welcome back ${username} | Pixels left: ${pixelsLeft}` : "Not verified"; }, 5000);
-    }
-    else if(msg.type==="clear_all"){
-        for(const idx in pixels){ delete pixels[idx]; }
-        drawBoard();
-    }
-    else if(msg.type==="info" && msg.message){ console.log(msg.message); }
-    else if(msg.type==="error"){ alert(msg.message); }
+    if(msg.type==="init_pixels"){ for(const idx in msg.pixels){ pixels[idx]="#4ce0ff"; } drawBoard(); }
+    else if(msg.type==="token"){ verificationToken=msg.token; returnToken=msg.return_token; document.getElementById("verificationToken").value=verificationToken; document.getElementById("returnToken").value=returnToken; document.getElementById("status").textContent="Type verification token in TikTok chat!"; }
+    else if(msg.type==="verified"){ if(msg.session===currentSession){ verified=true; username=msg.username; pixelsLeft=msg.pixels_left ?? 1; nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5); returnToken=msg.return_token ?? returnToken; document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`; document.getElementById("returnToken").value=returnToken; document.getElementById("palette-panel").style.display="block"; } }
+    else if(msg.type==="pixel"){ pixels[msg.index]=msg.color || "#4ce0ff"; if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+5; } drawBoard(); }
+    else if(msg.type==="clear_user"){ const removed=msg.sessionMap; for(const idx in removed){ pixels[Number(idx)]=null; } drawBoard(); }
+    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession) alert(msg.message); }
 };
 
-// --- Verification ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"get_token", session:currentSession}));
-});
+// --- Generate token ---
+document.getElementById("getTokenBtn").addEventListener("click", ()=> ws.send(JSON.stringify({action:"get_token", session:currentSession})));
+
+// --- Return login ---
 document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
-    const uname = document.getElementById("usernameInput").value.trim();
-    const rtoken = document.getElementById("returnCodeInput").value.trim();
+    const uname=document.getElementById("usernameInput").value.trim();
+    const rtoken=document.getElementById("returnCodeInput").value.trim();
     if(!uname||!rtoken) return alert("Enter username and return token");
     ws.send(JSON.stringify({action:"verify", username:uname, token:rtoken, session:currentSession}));
 });
 
 // --- Admin ---
-document.getElementById("adminLoginBtn").addEventListener("click", () => {
-    document.getElementById("adminPanel").style.display = "block";
-});
-document.getElementById("adminVerifyBtn").addEventListener("click", () => {
-    const key = document.getElementById("adminKeyInput").value.trim();
+document.getElementById("adminLoginBtn").addEventListener("click", ()=> document.getElementById("adminPanel").style.display="block");
+document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
+    const key=document.getElementById("adminKeyInput").value.trim();
     if(!key) return alert("Enter admin key");
-    ws.send(JSON.stringify({ action:"admin", key:key, command:"check", session:currentSession }));
+    ws.send(JSON.stringify({action:"admin", key:key, command:"check", session:currentSession}));
 });
-ws.addEventListener("message", e => {
-    const msg = JSON.parse(e.data);
-    if(msg.type === "info" && msg.message === "Admin key correct") {
-        document.getElementById("adminControls").style.display = "block";
-        alert("Admin verified!");
-    }
-    else if(msg.type === "error" && msg.message === "Invalid admin key") {
-        alert("Invalid admin key!");
-        document.getElementById("adminControls").style.display = "none";
-    }
+ws.addEventListener("message", e=>{
+    const msg=JSON.parse(e.data);
+    if(msg.type==="info" && msg.message==="Admin key correct"){ document.getElementById("adminControls").style.display="block"; alert("Admin verified!"); }
+    else if(msg.type==="error" && msg.message==="Invalid admin key"){ alert("Invalid admin key!"); document.getElementById("adminControls").style.display="none"; }
 });
-document.getElementById("clearUserPixelsBtn").addEventListener("click", () => {
-    const target = document.getElementById("adminUsername").value.trim();
+document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
+    const target=document.getElementById("adminUsername").value.trim();
     if(!target) return alert("Enter username");
-    ws.send(JSON.stringify({ action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target }));
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target}));
 });
-document.getElementById("unverifyUserBtn").addEventListener("click", () => {
-    const target = document.getElementById("adminUsername").value.trim();
+document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
+    const target=document.getElementById("adminUsername").value.trim();
     if(!target) return alert("Enter username");
-    ws.send(JSON.stringify({ action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target }));
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target}));
 });
-document.getElementById("clearAllBtn").addEventListener("click", () => {
-    ws.send(JSON.stringify({ action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear" }));
+document.getElementById("clearAllBtn").addEventListener("click", ()=>{
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
 });
 
 drawBoard();
