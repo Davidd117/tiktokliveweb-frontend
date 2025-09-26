@@ -3,59 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <title>TikTok Live R/Place</title>
-<link rel="stylesheet" href="styles.css">
 <style>
-/* Extra styles for hover UI */
-#userHoverInfo {
-  display: none;
-  position: absolute;
-  top: 50px;
-  left: 20px;
-  background: #222;
-  border: 1px solid #555;
-  padding: 10px;
-  border-radius: 6px;
-  text-align: center;
-  width: 140px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.6);
-  z-index: 1000;
-}
-#userHoverInfo {
-  display: none;
-  position: absolute;
-  width: 140px;
-  height: 100px; /* fixed height */
-  background: #222;
-  border: 1px solid #555;
-  padding: 10px;
-  border-radius: 6px;
-  text-align: center;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.6);
-  z-index: 1000;
-  overflow: hidden; /* prevent stretching children */
-}
+  body { background:#111; color:white; text-align:center; font-family:Arial; }
+  #canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
+  canvas { width:100%; height:100%; display:block; }
+  input, button { padding:5px; margin:5px; }
+  #userInfo { margin-top: 10px; }
+  #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
+  
+  /* Color Palette */
+  #palette-panel { display:none; background:#222; padding:10px; border:1px solid #555; margin:15px auto; width:320px; text-align:center; }
+  .colors { display:flex; gap:5px; justify-content:center; flex-wrap:wrap; }
+  .color { width:30px; height:30px; cursor:pointer; border-radius:4px; border:2px solid transparent; }
+  .color.selected { border:2px solid #fff; }
 
-#userHoverInfo img {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 2px solid #4ce0ff;
-  display: block;
-  margin: 0 auto 6px auto;
-}
-
-#hoverTooltip {
-  display: none;
-  position: absolute;
-  background: rgba(0,0,0,0.8);
-  color: #fff;
-  font-size: 12px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  pointer-events: none;
-  z-index: 1000;
-}
+  /* Hover Panel */
+  #hoverInfo {
+    display:none;
+    position:absolute;
+    width:140px;
+    background:#222;
+    border:1px solid #555;
+    padding:10px;
+    border-radius:6px;
+    text-align:center;
+    box-shadow:0 4px 10px rgba(0,0,0,0.6);
+    z-index:1000;
+    pointer-events:none;
+  }
+  #hoverInfo img {
+    width:64px;
+    height:64px;
+    border-radius:50%;
+    object-fit:cover;
+    border:2px solid #4ce0ff;
+    display:block;
+    margin:0 auto 6px auto;
+  }
+  #hoverInfo div {
+    font-size:14px;
+    word-break: break-word;
+  }
 </style>
 </head>
 <body>
@@ -81,28 +69,19 @@
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
 
-<div id="mainLayout">
-  <div id="palette-panel">
-    <h3>🎨 Color Palette</h3>
-    <div class="colors" id="colorPalette">
-      <div class="color selected" data-color="#4ce0ff" style="background:#4ce0ff;"></div>
-      <div class="color" data-color="#ff0000" style="background:#ff0000;"></div>
-      <div class="color" data-color="#00ff00" style="background:#00ff00;"></div>
-      <div class="color" data-color="#0000ff" style="background:#0000ff;"></div>
-      <div class="color" data-color="#ffff00" style="background:#ffff00;"></div>
-      <div class="color" data-color="#ff00ff" style="background:#ff00ff;"></div>
-      <div class="color" data-color="#00ffff" style="background:#00ffff;"></div>
-      <div class="color" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;"></div>
-    </div>
+<div id="palette-panel">
+  <h3>🎨 Color Palette</h3>
+  <div class="colors" id="colorPalette">
+    <div class="color selected" data-color="#4ce0ff" style="background:#4ce0ff;"></div>
+    <div class="color" data-color="#ff0000" style="background:#ff0000;"></div>
+    <div class="color" data-color="#00ff00" style="background:#00ff00;"></div>
+    <div class="color" data-color="#0000ff" style="background:#0000ff;"></div>
+    <div class="color" data-color="#ffff00" style="background:#ffff00;"></div>
+    <div class="color" data-color="#ff00ff" style="background:#ff00ff;"></div>
+    <div class="color" data-color="#00ffff" style="background:#00ffff;"></div>
+    <div class="color" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;"></div>
   </div>
 </div>
-
-<!-- Hover UI -->
-<div id="userHoverInfo">
-  <img id="hoverPfp" src="default.png" alt="profile" />
-  <div id="hoverName"></div>
-</div>
-<div id="hoverTooltip"></div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -122,6 +101,12 @@
   </div>
 </div>
 
+<!-- Hover Panel -->
+<div id="hoverInfo">
+  <img id="hoverPfp" src="" alt="pfp">
+  <div id="hoverName"></div>
+</div>
+
 <script>
 const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
 const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
@@ -129,12 +114,13 @@ const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
-const pixels = {}; // index -> {color, user, pfp}
+const pixels = new Array(gridSize*gridSize); // store {color, user, pfp}
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
 let scale, minScale, offsetX, offsetY;
 let dragging=false, lastX=0, lastY=0;
+const dragThreshold = 5;
 
 let verified=false;
 let username=null;
@@ -142,190 +128,204 @@ let pixelsLeft=0;
 let nextPixelTime=null;
 let returnToken=null;
 let verificationToken=null;
-let activeColor = "#4ce0ff";
 
-// Hover UI elements
-const hoverInfo = document.getElementById("userHoverInfo");
-const hoverName = document.getElementById("hoverName");
-const hoverPfp = document.getElementById("hoverPfp");
-const tooltip = document.getElementById("hoverTooltip");
+// --- Selected color ---
+let activeColor = "#4ce0ff"; // default
 
 // --- Canvas view ---
 function resetView(){
-  minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
-  scale = minScale;
-  offsetX = (canvas.width - gridSize*scale)/2;
-  offsetY = (canvas.height - gridSize*scale)/2;
+    minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
+    scale = minScale;
+    offsetX = (canvas.width - gridSize*scale)/2;
+    offsetY = (canvas.height - gridSize*scale)/2;
 }
 resetView();
-
 function clampOffsets(){
-  const maxOffsetX = 0, maxOffsetY=0;
-  const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
-  if(offsetX>maxOffsetX) offsetX=maxOffsetX;
-  if(offsetY>maxOffsetY) offsetY=maxOffsetY;
-  if(offsetX<minOffsetX) offsetX=minOffsetX;
-  if(offsetY<minOffsetY) offsetY=minOffsetY;
+    const maxOffsetX = 0, maxOffsetY=0;
+    const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
+    if(offsetX>maxOffsetX) offsetX=maxOffsetX;
+    if(offsetY>maxOffsetY) offsetY=maxOffsetY;
+    if(offsetX<minOffsetX) offsetX=minOffsetX;
+    if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
-
 function drawBoard(){
-  ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
-  ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-  ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
-  if(scale>4){
-    ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
-    for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
-    for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
-  }
-  for(const idx in pixels){
-    const {color} = pixels[idx];
-    const x=idx%gridSize, y=Math.floor(idx/gridSize);
-    ctx.fillStyle=color;
-    ctx.fillRect(x,y,1,1);
-  }
+    ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
+    ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
+    ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
+    if(scale>4){
+        ctx.strokeStyle="#333"; ctx.lineWidth=0.05;
+        for(let x=0;x<gridSize;x++){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,gridSize);ctx.stroke();}
+        for(let y=0;y<gridSize;y++){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(gridSize,y);ctx.stroke();}
+    }
+    for(let i=0;i<pixels.length;i++){
+        if(pixels[i]){
+            const x=i%gridSize, y=Math.floor(i/gridSize);
+            ctx.fillStyle=pixels[i].color;
+            ctx.fillRect(x,y,1,1);
+        }
+    }
 }
-
 canvas.addEventListener("wheel", e=>{
-  e.preventDefault();
-  const mouseX=(e.offsetX-offsetX)/scale;
-  const mouseY=(e.offsetY-offsetY)/scale;
-  const zoom=e.deltaY<0?1.1:0.9;
-  scale*=zoom;
-  scale=Math.min(Math.max(scale,minScale),40);
-  offsetX=e.offsetX - mouseX*scale;
-  offsetY=e.offsetY - mouseY*scale;
-  clampOffsets();
-  drawBoard();
+    e.preventDefault();
+    const mouseX=(e.offsetX-offsetX)/scale;
+    const mouseY=(e.offsetY-offsetY)/scale;
+    const zoom=e.deltaY<0?1.1:0.9;
+    scale*=zoom;
+    scale=Math.min(Math.max(scale,minScale),40);
+    offsetX=e.offsetX - mouseX*scale;
+    offsetY=e.offsetY - mouseY*scale;
+    clampOffsets();
+    drawBoard();
 });
-
-// --- Hover with TikTok avatar fix ---
-function getTikTokAvatar(username){
-  return `https://www.tiktok.com/@${username}/avatar`;
-}
-
-canvas.addEventListener("mousemove", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
-  const y = Math.floor((e.clientY - rect.top - offsetY) / scale);
-
-  if (x<0 || y<0 || x>=gridSize || y>=gridSize) {
-    tooltip.style.display = "none";
-    hoverInfo.style.display = "none";
-    return;
-  }
-
-  const index = y * gridSize + x;
-  const pixel = pixels[index];
-
-  if (pixel && pixel.user) {
-    tooltip.style.left = e.pageX + 10 + "px";
-    tooltip.style.top = e.pageY + 10 + "px";
-    tooltip.textContent = pixel.user;
-    tooltip.style.display = "block";
-
-    hoverInfo.style.left = e.pageX + 10 + "px";
-    hoverInfo.style.top = e.pageY + 30 + "px";
-    hoverInfo.style.display = "block";
-    hoverName.textContent = pixel.user;
-
-    // Use server pfp or TikTok avatar
-    const avatarUrl = pixel.pfp || getTikTokAvatar(pixel.user);
-    hoverPfp.src = avatarUrl;
-    hoverPfp.style.width = "64px";
-    hoverPfp.style.height = "64px";
-    hoverPfp.style.objectFit = "cover";
-    hoverPfp.style.borderRadius = "50%";
-  } else {
-    tooltip.style.display = "none";
-    hoverInfo.style.display = "none";
-  }
-});
-
 canvas.addEventListener("mousedown", e=>{
-  if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
+    if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
+});
+canvas.addEventListener("mousemove", e=>{
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
+    const y = Math.floor((e.clientY - rect.top - offsetY) / scale);
+    const index = y * gridSize + x;
+    const pixel = pixels[index];
+
+    const hoverPanel = document.getElementById("hoverInfo");
+    const hoverPfp = document.getElementById("hoverPfp");
+    const hoverName = document.getElementById("hoverName");
+
+    if(pixel && pixel.user){
+        hoverPanel.style.display="block";
+        hoverPanel.style.left = (e.pageX + 10) + "px";
+        hoverPanel.style.top = (e.pageY + 10) + "px";
+        hoverPfp.src = pixel.pfp || `https://www.tiktok.com/@${pixel.user}/avatar`;
+        hoverName.textContent = pixel.user;
+    } else {
+        hoverPanel.style.display="none";
+    }
+
+    if(e.buttons===1){
+        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold) dragging=true;
+        if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
+    }
 });
 canvas.addEventListener("mouseup", e=>{
-  if(!dragging){
-    if(!verified){ alert("Not verified!"); return; }
-    if(pixelsLeft<=0){ alert("No pixels available!"); return; }
-    const x=Math.floor((e.offsetX-offsetX)/scale);
-    const y=Math.floor((e.offsetY-offsetY)/scale);
-    if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-      ws.send(JSON.stringify({
-        action:"place_pixel",
-        session:currentSession,
-        index:x+y*gridSize,
-        color:activeColor
-      }));
+    if(!dragging){
+        if(!verified){ alert("Not verified!"); return; }
+        if(pixelsLeft<=0){ alert("No pixels available!"); return; }
+        const x=Math.floor((e.offsetX-offsetX)/scale);
+        const y=Math.floor((e.offsetY-offsetY)/scale);
+        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
+            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize, color:activeColor}));
+        }
     }
-  }
-  dragging=false;
+    dragging=false;
 });
 
 // --- Color selection ---
 document.querySelectorAll("#colorPalette .color").forEach(c=>{
-  c.addEventListener("click", ()=>{
-    document.querySelectorAll("#colorPalette .color").forEach(cl=>cl.classList.remove("selected"));
-    c.classList.add("selected");
-    activeColor = c.getAttribute("data-color");
-  });
+    c.addEventListener("click", ()=>{
+        document.querySelectorAll("#colorPalette .color").forEach(cl=>cl.classList.remove("selected"));
+        c.classList.add("selected");
+        activeColor = c.getAttribute("data-color");
+    });
 });
+
+// --- User info ---
+function updateUserInfo(){
+    const infoDiv = document.getElementById("userInfo");
+    let timeLeft = 0;
+    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    infoDiv.textContent = username ? 
+        `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
+        : `Not verified`;
+}
+
+// --- Countdown ---
+setInterval(()=>{
+    if(!verified || !nextPixelTime) return;
+    const now = Date.now()/1000;
+    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+5; }
+    updateUserInfo();
+}, 1000);
 
 // --- WebSocket ---
 ws.onopen = ()=> console.log("✅ WS connected!");
 ws.onmessage = e=>{
-  const msg = JSON.parse(e.data);
-  if(msg.type==="init_pixels"){
-    for(const idx in msg.pixels){ pixels[idx] = msg.pixels[idx]; }
-    drawBoard();
-  }
-  else if(msg.type==="token"){
-    verificationToken=msg.token; returnToken=msg.return_token;
-    document.getElementById("verificationToken").value=verificationToken;
-    document.getElementById("returnToken").value=returnToken;
-    document.getElementById("status").textContent="Type verification token in TikTok chat!";
-  }
-  else if(msg.type==="verified"){
-    if(msg.session===currentSession){
-      verified=true; username=msg.username;
-      pixelsLeft=msg.pixels_left ?? 1;
-      nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5);
-      returnToken=msg.return_token ?? returnToken;
-      document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`;
-      document.getElementById("returnToken").value=returnToken;
-      document.getElementById("palette-panel").style.display="block";
+    const msg = JSON.parse(e.data);
+    if(msg.type==="init_pixels"){ 
+        for(const idx in msg.pixels){ 
+            pixels[idx] = msg.pixels[idx];  // store full object: {color, user, pfp}
+        } 
+        drawBoard(); 
     }
-  }
-  else if(msg.type==="pixel"){
-    pixels[msg.index]={color:msg.color,user:msg.user,pfp:msg.pfp};
-    if(msg.session===currentSession){
-      pixelsLeft=Math.max(0,pixelsLeft-1);
-      nextPixelTime=Date.now()/1000+5;
+    else if(msg.type==="token"){ 
+        verificationToken=msg.token; returnToken=msg.return_token; 
+        document.getElementById("verificationToken").value=verificationToken; 
+        document.getElementById("returnToken").value=returnToken; 
+        document.getElementById("status").textContent="Type verification token in TikTok chat!"; 
     }
-    drawBoard();
-  }
-  else if(msg.type==="clear_user" || msg.type === "clear_all"){
-    const removed=msg.sessionMap;
-    for(const idx in removed){ delete pixels[Number(idx)]; }
-    drawBoard();
-  }
-  else if(msg.type==="error"){
-    if(msg.session===undefined || msg.session===currentSession)
-      alert(msg.message);
-  }
+    else if(msg.type==="verified"){ 
+        if(msg.session===currentSession){ 
+            verified=true; username=msg.username; 
+            pixelsLeft=msg.pixels_left ?? 1; 
+            nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5); 
+            returnToken=msg.return_token ?? returnToken; 
+            document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`; 
+            document.getElementById("returnToken").value=returnToken; 
+            document.getElementById("palette-panel").style.display="block"; 
+        } 
+    }
+    else if(msg.type==="pixel"){ 
+        pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
+        if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+5; } 
+        drawBoard(); 
+    }
+    else if(msg.type==="clear_user"){ 
+        const removed=msg.sessionMap; 
+        for(const idx in removed){ pixels[Number(idx)]=null; } 
+        drawBoard(); 
+    }
+    else if(msg.type==="clear_all"){
+        const removed = msg.sessionMap;
+        for(const idx in removed){ pixels[Number(idx)] = null; }
+        drawBoard();
+    }
+    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession) alert(msg.message); }
 };
 
 // --- Generate token ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=>{
-  ws.send(JSON.stringify({action:"get_token", session:currentSession}));
-});
+document.getElementById("getTokenBtn").addEventListener("click", ()=> ws.send(JSON.stringify({action:"get_token", session:currentSession})));
 
 // --- Return login ---
 document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
-  const uname=document.getElementById("usernameInput").value.trim();
-  const rtoken=document.getElementById("returnCodeInput").value.trim();
-  if(!uname||!rtoken) return alert("Enter username and return token");
-  ws.send(JSON.stringify({action:"verify", username:uname, token:rtoken, session:currentSession}));
+    const uname=document.getElementById("usernameInput").value.trim();
+    const rtoken=document.getElementById("returnCodeInput").value.trim();
+    if(!uname||!rtoken) return alert("Enter username and return token");
+    ws.send(JSON.stringify({action:"verify", username:uname, token:rtoken, session:currentSession}));
+});
+
+// --- Admin ---
+document.getElementById("adminLoginBtn").addEventListener("click", ()=> document.getElementById("adminPanel").style.display="block");
+document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
+    const key=document.getElementById("adminKeyInput").value.trim();
+    if(!key) return alert("Enter admin key");
+    ws.send(JSON.stringify({action:"admin", key:key, command:"check", session:currentSession}));
+});
+ws.addEventListener("message", e=>{
+    const msg=JSON.parse(e.data);
+    if(msg.type==="info" && msg.message==="Admin key correct"){ document.getElementById("adminControls").style.display="block"; alert("Admin verified!"); }
+    else if(msg.type==="error" && msg.message==="Invalid admin key"){ alert("Invalid admin key!"); document.getElementById("adminControls").style.display="none"; }
+});
+document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
+    const target=document.getElementById("adminUsername").value.trim();
+    if(!target) return alert("Enter username");
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target}));
+});
+document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
+    const target=document.getElementById("adminUsername").value.trim();
+    if(!target) return alert("Enter username");
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target}));
+});
+document.getElementById("clearAllBtn").addEventListener("click", ()=>{
+    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
 });
 
 drawBoard();
