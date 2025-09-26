@@ -44,6 +44,12 @@
 </div>
 </div>
 
+  <div id="userHoverInfo">
+    <img id="hoverPfp" src="" alt="profile" />
+    <div id="hoverName"></div>
+  </div>
+  <div id="hoverTooltip"></div>
+
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
 </div>
@@ -135,10 +141,27 @@ canvas.addEventListener("wheel", e=>{
 canvas.addEventListener("mousedown", e=>{
     if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
 });
-canvas.addEventListener("mousemove", e=>{
-    if(e.buttons===1){
-        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold) dragging=true;
-        if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
+canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / (rect.width / boardWidth));
+    const y = Math.floor((e.clientY - rect.top) / (rect.height / boardHeight));
+    const index = y * boardWidth + x;
+
+    const pixel = pixels[index];
+    if (pixel && pixel.user) {
+        // Show tooltip near mouse
+        tooltip.style.left = e.pageX + 10 + "px";
+        tooltip.style.top = e.pageY + 10 + "px";
+        tooltip.textContent = pixel.user;
+        tooltip.style.display = "block";
+
+        // Show side panel
+        hoverInfo.style.display = "block";
+        hoverName.textContent = pixel.user;
+        hoverPfp.src = pixel.pfp || "default.png";
+    } else {
+        tooltip.style.display = "none";
+        hoverInfo.style.display = "none";
     }
 });
 canvas.addEventListener("mouseup", e=>{
@@ -245,6 +268,7 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
 
 
