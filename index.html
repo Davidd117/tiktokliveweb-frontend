@@ -12,7 +12,7 @@
   #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
   
   /* Color Palette */
-  #palette-panel { display:none; background:#222; padding:10px; border:1px solid #555; margin:15px auto; width:320px; text-align:center; }
+  #palette-panel { display:none; background:#222; padding:10px; border:1px solid #555; margin:15px auto; width:340px; text-align:center; }
   .colors { display:flex; gap:5px; justify-content:center; flex-wrap:wrap; }
   .color { width:30px; height:30px; cursor:pointer; border-radius:4px; border:2px solid transparent; }
   .color.selected { border:2px solid #fff; }
@@ -72,6 +72,7 @@
 <div id="palette-panel">
   <h3>🎨 Color Palette</h3>
   <div class="colors" id="colorPalette">
+    <!-- Your colors -->
     <div class="color selected" data-color="#6d001a" style="background:#6d001a;"></div>
     <div class="color" data-color="#be0039" style="background:#be0039;"></div>
     <div class="color" data-color="#ff4500" style="background:#ff4500;"></div>
@@ -104,9 +105,10 @@
     <div class="color" data-color="#898d90" style="background:#898d90;"></div>
     <div class="color" data-color="#d4d7d9" style="background:#d4d7d9;"></div>
     <div class="color" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;"></div>
+    <!-- PFP option -->
+    <div class="color" id="pfpOption" data-color="pfp" style="background:linear-gradient(45deg,#4ce0ff,#ff4500); border:2px dashed #fff;" title="Place your TikTok PFP"></div>
   </div>
 </div>
-
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
@@ -139,7 +141,7 @@ const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const gridSize = 1000;
-const pixels = new Array(gridSize*gridSize); // store {color, user, pfp}
+const pixels = new Array(gridSize*gridSize);
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
 
@@ -155,7 +157,7 @@ let returnToken=null;
 let verificationToken=null;
 
 // --- Selected color ---
-let activeColor = "#4ce0ff"; // default
+let activeColor = "#6d001a";
 
 // --- Canvas view ---
 function resetView(){
@@ -185,11 +187,18 @@ function drawBoard(){
     for(let i=0;i<pixels.length;i++){
         if(pixels[i]){
             const x=i%gridSize, y=Math.floor(i/gridSize);
-            ctx.fillStyle=pixels[i].color;
-            ctx.fillRect(x,y,1,1);
+            if(pixels[i].color==="pfp" && pixels[i].pfp){
+                const img = new Image();
+                img.src = pixels[i].pfp;
+                ctx.drawImage(img,x,y,1,1);
+            } else {
+                ctx.fillStyle=pixels[i].color;
+                ctx.fillRect(x,y,1,1);
+            }
         }
     }
 }
+
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
     const mouseX=(e.offsetX-offsetX)/scale;
@@ -202,9 +211,11 @@ canvas.addEventListener("wheel", e=>{
     clampOffsets();
     drawBoard();
 });
+
 canvas.addEventListener("mousedown", e=>{
     if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
 });
+
 canvas.addEventListener("mousemove", e=>{
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
@@ -231,6 +242,7 @@ canvas.addEventListener("mousemove", e=>{
         if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
     }
 });
+
 canvas.addEventListener("mouseup", e=>{
     if(!dragging){
         if(!verified){ alert("Not verified!"); return; }
@@ -276,9 +288,7 @@ ws.onopen = ()=> console.log("✅ WS connected!");
 ws.onmessage = e=>{
     const msg = JSON.parse(e.data);
     if(msg.type==="init_pixels"){ 
-        for(const idx in msg.pixels){ 
-            pixels[idx] = msg.pixels[idx];  // store full object: {color, user, pfp}
-        } 
+        for(const idx in msg.pixels){ pixels[idx] = msg.pixels[idx]; }
         drawBoard(); 
     }
     else if(msg.type==="token"){ 
