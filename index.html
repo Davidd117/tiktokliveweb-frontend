@@ -206,6 +206,10 @@ ws.onmessage = e=>{
     else if(msg.type==="verified"){ if(msg.session===currentSession){ verified=true; username=msg.username; pixelsLeft=msg.pixels_left ?? 1; nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5); returnToken=msg.return_token ?? returnToken; document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`; document.getElementById("returnToken").value=returnToken; document.getElementById("palette-panel").style.display="block"; } }
     else if(msg.type==="pixel"){ pixels[msg.index]=msg.color || "#4ce0ff"; if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+5; } drawBoard(); }
     else if(msg.type==="clear_user"){ const removed=msg.sessionMap; for(const idx in removed){ pixels[Number(idx)]=null; } drawBoard(); }
+     else if(msg.type === "clear_all"){
+        for(let i = 0; i < pixels.length; i++) pixels[i] = null;
+        drawBoard();
+    }
     else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession) alert(msg.message); }
 };
 
@@ -250,3 +254,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
