@@ -3,48 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>TikTok Live R/Place</title>
-<style>
-  body { background:#111; color:white; text-align:center; font-family:Arial; }
-  #canvasContainer { width: 800px; height: 800px; margin: 20px auto; border: 2px solid #444; background: #222; overflow: hidden; cursor: grab; }
-  canvas { width:100%; height:100%; display:block; }
-  input, button { padding:5px; margin:5px; }
-  #userInfo { margin-top: 10px; }
-  #adminPanel { display:none; background:#222; padding:10px; border:1px solid #555; margin:10px auto; width:300px; }
-  
-  /* Color Palette */
-  #palette-panel { display:none; background:#222; padding:10px; border:1px solid #555; margin:15px auto; width:340px; text-align:center; }
-  .colors { display:flex; gap:5px; justify-content:center; flex-wrap:wrap; }
-  .color { width:30px; height:30px; cursor:pointer; border-radius:4px; border:2px solid transparent; }
-  .color.selected { border:2px solid #fff; }
-
-  /* Hover Panel */
-  #hoverInfo {
-    display:none;
-    position:absolute;
-    width:140px;
-    background:#222;
-    border:1px solid #555;
-    padding:10px;
-    border-radius:6px;
-    text-align:center;
-    box-shadow:0 4px 10px rgba(0,0,0,0.6);
-    z-index:1000;
-    pointer-events:none;
-  }
-  #hoverInfo img {
-    width:64px;
-    height:64px;
-    border-radius:50%;
-    object-fit:cover;
-    border:2px solid #4ce0ff;
-    display:block;
-    margin:0 auto 6px auto;
-  }
-  #hoverInfo div {
-    font-size:14px;
-    word-break: break-word;
-  }
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <h2>TikTok Live R/Place</h2>
@@ -128,6 +87,8 @@
   </div>
 </div>
 
+
+
 <!-- Hover Panel -->
 <div id="hoverInfo">
   <img id="hoverPfp" src="" alt="pfp">
@@ -157,6 +118,9 @@ let pixelsLeft=0;
 let nextPixelTime=null;
 let returnToken=null;
 let verificationToken=null;
+let hoverX = -1;
+let hoverY = -1;
+let selectedColor = "#ff4500"; // default selected color
 
 // --- Selected color ---
 let activeColor = "#6d001a";
@@ -180,8 +144,11 @@ function clampOffsets(){
 function drawBoard(){
     ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
     ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-    ctx.fillStyle="#222"; ctx.fillRect(0,0,gridSize,gridSize);
+    ctx.fillStyle="#fff"; 
+    ctx.fillRect(0,0,gridSize,gridSize);
+    //ctx.imageSmoothingEnabled = true;
 
+    // draw existing pixels
     for(let i=0;i<pixels.length;i++){
         if(pixels[i]){
             const x=i%gridSize, y=Math.floor(i/gridSize);
@@ -194,10 +161,19 @@ function drawBoard(){
                 ctx.drawImage(pfpCache[pixels[i].user], x, y, 1, 1);
             } else {
                 ctx.fillStyle=pixels[i].color;
-                ctx.fillRect(x,y,1,1);
+                ctx.fillRect(x,y,1.0,1.0);
             }
         }
     }
+
+    // draw hover outline
+    // Draw hover outline
+    if(hoverX >= 0 && hoverY >= 0){
+        ctx.strokeStyle = selectedColor;
+        ctx.lineWidth = 0.1; // adjust thickness as needed
+        ctx.strokeRect(hoverX, hoverY, 1, 1);
+    }
+
 }
 
 canvas.addEventListener("wheel", e=>{
@@ -217,32 +193,55 @@ canvas.addEventListener("mousedown", e=>{
     if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
 });
 
-canvas.addEventListener("mousemove", e=>{
+canvas.addEventListener("mousemove", e => {
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
     const y = Math.floor((e.clientY - rect.top - offsetY) / scale);
-    const index = y * gridSize + x;
+
+    // Clamp to grid
+    hoverX = Math.max(0, Math.min(gridSize - 1, x));
+    hoverY = Math.max(0, Math.min(gridSize - 1, y));
+
+    const index = hoverY * gridSize + hoverX;
     const pixel = pixels[index];
 
+    // Hover panel
     const hoverPanel = document.getElementById("hoverInfo");
     const hoverPfp = document.getElementById("hoverPfp");
     const hoverName = document.getElementById("hoverName");
 
     if(pixel && pixel.user){
-        hoverPanel.style.display="block";
+        hoverPanel.style.display = "block";
         hoverPanel.style.left = (e.pageX + 10) + "px";
         hoverPanel.style.top = (e.pageY + 10) + "px";
         hoverPfp.src = pixel.pfp || `https://www.tiktok.com/@${pixel.user}/avatar`;
         hoverName.textContent = pixel.user;
     } else {
-        hoverPanel.style.display="none";
+        hoverPanel.style.display = "none";
     }
 
-    if(e.buttons===1){
-        if(Math.abs(e.clientX-lastX)>dragThreshold || Math.abs(e.clientY-lastY)>dragThreshold) dragging=true;
-        if(dragging){ offsetX+=e.clientX-lastX; offsetY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; clampOffsets(); drawBoard(); }
+    // Dragging
+    if(e.buttons === 1){
+        if(Math.abs(e.clientX - lastX) > dragThreshold || Math.abs(e.clientY - lastY) > dragThreshold) dragging = true;
+        if(dragging){
+            offsetX += e.clientX - lastX;
+            offsetY += e.clientY - lastY;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            clampOffsets();
+        }
     }
+
+    drawBoard(); // redraw board with hover outline
 });
+
+
+canvas.addEventListener("mouseleave", () => {
+    hoverX = -1;
+    hoverY = -1;
+    drawBoard();
+});
+
 
 canvas.addEventListener("mouseup", e=>{
     if(!dragging){
@@ -263,8 +262,10 @@ document.querySelectorAll("#colorPalette .color").forEach(c=>{
         document.querySelectorAll("#colorPalette .color").forEach(cl=>cl.classList.remove("selected"));
         c.classList.add("selected");
         activeColor = c.getAttribute("data-color");
+        selectedColor = c.getAttribute("data-color"); // FIXED: use 'c', not 'swatch'
     });
 });
+
 
 // --- User info ---
 function updateUserInfo(){
@@ -363,6 +364,8 @@ document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
 document.getElementById("clearAllBtn").addEventListener("click", ()=>{
     ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
 });
+
+
 
 drawBoard();
 </script>
