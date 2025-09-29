@@ -25,6 +25,19 @@
   <button id="returnLoginBtn">Return Login</button>
 </div>
 
+<div>
+  <h3>Live Follower Count</h3>
+  <iframe 
+      height="80px" 
+      width="300px" 
+      frameborder="0" 
+      src="https://livecounts.io/embed/tiktok-live-follower-counter/davidsworkshop" 
+      style="border: 0; width:300px; height:80px;">
+
+  </iframe>
+</div>
+
+
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
 
@@ -189,14 +202,21 @@ canvas.addEventListener("wheel", e=>{
     drawBoard();
 });
 
+
+
+
+
 canvas.addEventListener("mousedown", e=>{
     if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
+
 });
 
 canvas.addEventListener("mousemove", e => {
+
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
     const y = Math.floor((e.clientY - rect.top - offsetY) / scale);
+    
 
     // Clamp to grid
     hoverX = Math.max(0, Math.min(gridSize - 1, x));
@@ -239,6 +259,7 @@ canvas.addEventListener("mousemove", e => {
 canvas.addEventListener("mouseleave", () => {
     hoverX = -1;
     hoverY = -1;
+    
     drawBoard();
 });
 
