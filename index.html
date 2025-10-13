@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <title>TikTok Live R/Place</title>
 <link rel="stylesheet" href="styles.css">
+<style>
+  /* Optional small fix for hover panel */
+  #hoverInfo {
+    position: absolute;
+    display: none;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    padding: 4px;
+    border-radius: 4px;
+    pointer-events: none;
+    font-size: 12px;
+    z-index: 100;
+  }
+  #hoverInfo img { width: 20px; height: 20px; vertical-align: middle; margin-right: 4px; }
+</style>
 </head>
 <body>
 <h2>TikTok Live R/Place</h2>
@@ -33,10 +48,8 @@
       frameborder="0" 
       src="https://livecounts.io/embed/tiktok-live-follower-counter/davidsworkshop" 
       style="border: 0; width:300px; height:80px;">
-
   </iframe>
 </div>
-
 
 <div id="status">Not verified</div>
 <div id="userInfo"></div>
@@ -44,7 +57,7 @@
 <div id="palette-panel">
   <h3>🎨 Color Palette</h3>
   <div class="colors" id="colorPalette">
-    <!-- Your colors -->
+    <!-- Colors and PFP -->
     <div class="color selected" data-color="#6d001a" style="background:#6d001a;"></div>
     <div class="color" data-color="#be0039" style="background:#be0039;"></div>
     <div class="color" data-color="#ff4500" style="background:#ff4500;"></div>
@@ -77,7 +90,6 @@
     <div class="color" data-color="#898d90" style="background:#898d90;"></div>
     <div class="color" data-color="#d4d7d9" style="background:#d4d7d9;"></div>
     <div class="color" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;"></div>
-    <!-- PFP option -->
     <div class="color" id="pfpOption" data-color="pfp" style="background:linear-gradient(45deg,#4ce0ff,#ff4500); border:2px dashed #fff;" title="Place your TikTok PFP"></div>
   </div>
 </div>
@@ -100,8 +112,6 @@
   </div>
 </div>
 
-
-
 <!-- Hover Panel -->
 <div id="hoverInfo">
   <img id="hoverPfp" src="" alt="pfp">
@@ -109,44 +119,33 @@
 </div>
 
 <script>
-const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
-
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
 const gridSize = 1000;
 const pixels = new Array(gridSize*gridSize);
+const pfpCache = {};
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 canvas.width = canvas.clientWidth;
 canvas.height = canvas.clientHeight;
-const pfpCache = {}; // store images by username
-
 
 let scale, minScale, offsetX, offsetY;
 let dragging=false, lastX=0, lastY=0;
-const dragThreshold = 5;
-
-let verified=false;
-let username=null;
-let pixelsLeft=0;
-let nextPixelTime=null;
-let returnToken=null;
-let verificationToken=null;
-let hoverX = -1;
-let hoverY = -1;
-let selectedColor = "#ff4500"; // default selected color
-
-// --- Selected color ---
+let dragThreshold=5;
+let hoverX=-1, hoverY=-1;
 let activeColor = "#6d001a";
+let selectedColor = "#6d001a";
 
-// --- Canvas view ---
-function resetView(){
+let verified=false, username=null, pixelsLeft=0, nextPixelTime=null, returnToken=null, verificationToken=null;
+const COOLDOWN = 5;
+const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
+
+// --- Reset and clamp ---
+function resetView() {
     minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
     scale = minScale;
     offsetX = (canvas.width - gridSize*scale)/2;
     offsetY = (canvas.height - gridSize*scale)/2;
 }
-resetView();
-function clampOffsets(){
+function clampOffsets() {
     const maxOffsetX = 0, maxOffsetY=0;
     const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
     if(offsetX>maxOffsetX) offsetX=maxOffsetX;
@@ -154,41 +153,41 @@ function clampOffsets(){
     if(offsetX<minOffsetX) offsetX=minOffsetX;
     if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
+resetView();
+
+// --- Draw board ---
 function drawBoard(){
     ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
     ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-    ctx.fillStyle="#fff"; 
-    ctx.fillRect(0,0,gridSize,gridSize);
-    //ctx.imageSmoothingEnabled = true;
+    ctx.fillStyle="#fff"; ctx.fillRect(0,0,gridSize,gridSize);
 
-    // draw existing pixels
     for(let i=0;i<pixels.length;i++){
-        if(pixels[i]){
+        const px = pixels[i];
+        if(px){
             const x=i%gridSize, y=Math.floor(i/gridSize);
-            if(pixels[i].color==="pfp" && pixels[i].pfp){
-                if(!pfpCache[pixels[i].user]){
-                    const img = new Image();
-                    img.src = pixels[i].pfp;
-                    pfpCache[pixels[i].user] = img;
+            if(px.color==="pfp" && px.pfp){
+                if(!pfpCache[px.user]){
+                    const img=new Image();
+                    img.src=px.pfp;
+                    pfpCache[px.user]=img;
                 }
-                ctx.drawImage(pfpCache[pixels[i].user], x, y, 1, 1);
+                const img = pfpCache[px.user];
+                if(img.complete) ctx.drawImage(img, x, y, 1, 1);
             } else {
-                ctx.fillStyle=pixels[i].color;
-                ctx.fillRect(x,y,1.0,1.0);
+                ctx.fillStyle = px.color;
+                ctx.fillRect(x,y,1,1);
             }
         }
     }
 
-    // draw hover outline
-    // Draw hover outline
-    if(hoverX >= 0 && hoverY >= 0){
-        ctx.strokeStyle = selectedColor;
-        ctx.lineWidth = 0.1; // adjust thickness as needed
+    if(hoverX>=0 && hoverY>=0){
+        ctx.strokeStyle=selectedColor;
+        ctx.lineWidth=0.1;
         ctx.strokeRect(hoverX, hoverY, 1, 1);
     }
-
 }
 
+// --- Canvas zoom & drag ---
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
     const mouseX=(e.offsetX-offsetX)/scale;
@@ -202,197 +201,112 @@ canvas.addEventListener("wheel", e=>{
     drawBoard();
 });
 
-
-
-
-
-canvas.addEventListener("mousedown", e=>{
-    if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
-
-});
-
-canvas.addEventListener("mousemove", e => {
-
+canvas.addEventListener("mousedown", e=>{ if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }});
+canvas.addEventListener("mousemove", e=>{
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
-    const y = Math.floor((e.clientY - rect.top - offsetY) / scale);
-    
+    const x=Math.floor((e.clientX-rect.left-offsetX)/scale);
+    const y=Math.floor((e.clientY-rect.top-offsetY)/scale);
+    hoverX=Math.max(0,Math.min(gridSize-1,x));
+    hoverY=Math.max(0,Math.min(gridSize-1,y));
 
-    // Clamp to grid
-    hoverX = Math.max(0, Math.min(gridSize - 1, x));
-    hoverY = Math.max(0, Math.min(gridSize - 1, y));
-
-    const index = hoverY * gridSize + hoverX;
-    const pixel = pixels[index];
-
-    // Hover panel
-    const hoverPanel = document.getElementById("hoverInfo");
-    const hoverPfp = document.getElementById("hoverPfp");
-    const hoverName = document.getElementById("hoverName");
-
+    const pixel=pixels[hoverY*gridSize+hoverX];
+    const hoverPanel=document.getElementById("hoverInfo");
+    const hoverPfp=document.getElementById("hoverPfp");
+    const hoverName=document.getElementById("hoverName");
     if(pixel && pixel.user){
-        hoverPanel.style.display = "block";
-        hoverPanel.style.left = (e.pageX + 10) + "px";
-        hoverPanel.style.top = (e.pageY + 10) + "px";
-        hoverPfp.src = pixel.pfp || `https://www.tiktok.com/@${pixel.user}/avatar`;
-        hoverName.textContent = pixel.user;
-    } else {
-        hoverPanel.style.display = "none";
-    }
+        hoverPanel.style.display="block";
+        hoverPanel.style.left=(e.pageX+10)+"px";
+        hoverPanel.style.top=(e.pageY+10)+"px";
+        hoverPfp.src=pixel.pfp || "";
+        hoverName.textContent=pixel.user;
+    } else hoverPanel.style.display="none";
 
-    // Dragging
-    if(e.buttons === 1){
-        if(Math.abs(e.clientX - lastX) > dragThreshold || Math.abs(e.clientY - lastY) > dragThreshold) dragging = true;
+    if(e.buttons===1){
+        const dx=e.clientX-lastX, dy=e.clientY-lastY;
+        if(!dragging && Math.sqrt(dx*dx+dy*dy)>dragThreshold) dragging=true;
         if(dragging){
-            offsetX += e.clientX - lastX;
-            offsetY += e.clientY - lastY;
-            lastX = e.clientX;
-            lastY = e.clientY;
+            offsetX+=dx; offsetY+=dy;
             clampOffsets();
+            drawBoard();
+            lastX=e.clientX; lastY=e.clientY;
         }
     }
-
-    drawBoard(); // redraw board with hover outline
 });
-
-
-canvas.addEventListener("mouseleave", () => {
-    hoverX = -1;
-    hoverY = -1;
-    
-    drawBoard();
-});
-
-
 canvas.addEventListener("mouseup", e=>{
-    if(!dragging){
-        if(!verified){ alert("Not verified!"); return; }
-        if(pixelsLeft<=0){ alert("No pixels available!"); return; }
-        const x=Math.floor((e.offsetX-offsetX)/scale);
-        const y=Math.floor((e.offsetY-offsetY)/scale);
-        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize, color:activeColor}));
-        }
+    if(!dragging && e.button===0){
+        if(!verified) return alert("You must verify first!");
+        const index=hoverY*gridSize+hoverX;
+        const msg={type:"place", index:index, color:activeColor, session:currentSession};
+        if(activeColor==="pfp") msg.pfp=pfpCache[username]?.src;
+        ws.send(JSON.stringify(msg));
     }
-    dragging=false;
 });
 
 // --- Color selection ---
-document.querySelectorAll("#colorPalette .color").forEach(c=>{
-    c.addEventListener("click", ()=>{
-        document.querySelectorAll("#colorPalette .color").forEach(cl=>cl.classList.remove("selected"));
+document.querySelectorAll(".color").forEach(c=>{
+    c.addEventListener("click", e=>{
+        document.querySelectorAll(".color").forEach(el=>el.classList.remove("selected"));
         c.classList.add("selected");
-        activeColor = c.getAttribute("data-color");
-        selectedColor = c.getAttribute("data-color"); // FIXED: use 'c', not 'swatch'
+        activeColor=c.dataset.color;
     });
 });
 
-
-// --- User info ---
-function updateUserInfo(){
-    const infoDiv = document.getElementById("userInfo");
-    let timeLeft = 0;
-    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
-    infoDiv.textContent = username ? 
-        `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
-        : `Not verified`;
-}
-
-// --- Countdown ---
-setInterval(()=>{
-    if(!verified || !nextPixelTime) return;
-    const now = Date.now()/1000;
-    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+5; }
-    updateUserInfo();
-}, 1000);
-
 // --- WebSocket ---
-ws.onopen = ()=> console.log("✅ WS connected!");
-ws.onmessage = e=>{
+const ws = new WebSocket("wss://yourserver.com/ws");
+
+ws.onopen = ()=>{ console.log("WS connected"); };
+ws.onclose = ()=>{ console.log("WS closed"); };
+ws.onerror = e=>{ console.error(e); };
+
+ws.onmessage = e => {
     const msg = JSON.parse(e.data);
-    if(msg.type==="init_pixels"){ 
-        for(const idx in msg.pixels){ pixels[idx] = msg.pixels[idx]; }
-        drawBoard(); 
+
+    if (msg.type === "init_pixels") {
+        for (const idx in msg.pixels) pixels[Number(idx)] = msg.pixels[idx];
+        for (const idx in pixels) {
+            const px = pixels[idx];
+            if (px && px.color === "pfp" && px.pfp && !pfpCache[px.user]) {
+                const img = new Image(); img.src = px.pfp; pfpCache[px.user]=img;
+            }
+        }
+        setTimeout(drawBoard, 50);
     }
-    else if(msg.type==="token"){ 
-        verificationToken=msg.token; returnToken=msg.return_token; 
-        document.getElementById("verificationToken").value=verificationToken; 
-        document.getElementById("returnToken").value=returnToken; 
-        document.getElementById("status").textContent="Type verification token in TikTok chat!"; 
-    }
-      else if (msg.type === "verifyFailed" && msg.reason === "not_following") {
-    // 🚫 User tried to verify but isn’t following
-    document.getElementById("status").textContent = "❌ You have not followed the creator. Please follow, then enter the code again.";
-    document.getElementById("palette-panel").style.display = "none";
-}
-    else if(msg.type==="verified"){ 
-        if(msg.session===currentSession){ 
-            verified=true; username=msg.username; 
-            pixelsLeft=msg.pixels_left ?? 1; 
-            nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5); 
-            returnToken=msg.return_token ?? returnToken; 
-            document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`; 
-            document.getElementById("returnToken").value=returnToken; 
-            document.getElementById("palette-panel").style.display="block"; 
-        } 
-    }
-    else if(msg.type==="pixel"){ 
-        pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
-        if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+5; } 
-        drawBoard(); 
-    }
-    else if(msg.type==="clear_user"){ 
-        const removed=msg.sessionMap; 
-        for(const idx in removed){ pixels[Number(idx)]=null; } 
-        drawBoard(); 
-    }
-    else if(msg.type==="clear_all"){
-        const removed = msg.sessionMap;
-        for(const idx in removed){ pixels[Number(idx)] = null; }
+    else if (msg.type === "pixel") {
+        const index=Number(msg.index);
+        pixels[index]={color:msg.color,user:msg.user,pfp:msg.pfp};
+        if(msg.color==="pfp" && msg.pfp && !pfpCache[msg.user]){
+            const img=new Image(); img.src=msg.pfp; pfpCache[msg.user]=img;
+        }
+        if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+COOLDOWN; }
         drawBoard();
     }
-    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession) alert(msg.message); }
+    else if (msg.type === "clear_user" || msg.type==="clear_all"){
+        for(const idx in msg.sessionMap) pixels[Number(idx)]=null;
+        drawBoard();
+    }
+    else if (msg.type==="token"){
+        verificationToken=msg.token; returnToken=msg.return_token;
+        document.getElementById("verificationToken").value=verificationToken;
+        document.getElementById("returnToken").value=returnToken;
+        document.getElementById("status").textContent="Type verification token in TikTok chat!";
+    }
+    else if(msg.type==="verifyFailed" && msg.reason==="not_following"){
+        document.getElementById("status").textContent="❌ You have not followed the creator. Enter code again.";
+        document.getElementById("palette-panel").style.display="none";
+    }
+    else if(msg.type==="verified" && msg.session===currentSession){
+        verified=true; username=msg.username; pixelsLeft=msg.pixels_left??1; nextPixelTime=msg.next_pixel_time??(Date.now()/1000+COOLDOWN);
+        returnToken=msg.return_token??returnToken;
+        document.getElementById("status").textContent=`✅ VERIFIED! Welcome ${username}`;
+        document.getElementById("returnToken").value=returnToken;
+        document.getElementById("palette-panel").style.display="block";
+    }
+    else if(msg.type==="error"){
+        if(msg.session===undefined||msg.session===currentSession) alert(msg.message);
+    }
 };
 
-// --- Generate token ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=> ws.send(JSON.stringify({action:"get_token", session:currentSession})));
-
-// --- Return login ---
-document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
-    const uname=document.getElementById("usernameInput").value.trim();
-    const rtoken=document.getElementById("returnCodeInput").value.trim();
-    if(!uname||!rtoken) return alert("Enter username and return token");
-    ws.send(JSON.stringify({action:"verify", username:uname, token:rtoken, session:currentSession}));
-});
-
-// --- Admin ---
-document.getElementById("adminLoginBtn").addEventListener("click", ()=> document.getElementById("adminPanel").style.display="block");
-document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
-    const key=document.getElementById("adminKeyInput").value.trim();
-    if(!key) return alert("Enter admin key");
-    ws.send(JSON.stringify({action:"admin", key:key, command:"check", session:currentSession}));
-});
-ws.addEventListener("message", e=>{
-    const msg=JSON.parse(e.data);
-    if(msg.type==="info" && msg.message==="Admin key correct"){ document.getElementById("adminControls").style.display="block"; alert("Admin verified!"); }
-    else if(msg.type==="error" && msg.message==="Invalid admin key"){ alert("Invalid admin key!"); document.getElementById("adminControls").style.display="none"; }
-});
-document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
-    const target=document.getElementById("adminUsername").value.trim();
-    if(!target) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target}));
-});
-document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
-    const target=document.getElementById("adminUsername").value.trim();
-    if(!target) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target}));
-});
-document.getElementById("clearAllBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
-});
-
-
-
+resetView();
 drawBoard();
 </script>
 </body>
