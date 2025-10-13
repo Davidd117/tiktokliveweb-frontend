@@ -320,6 +320,11 @@ ws.onmessage = e=>{
         document.getElementById("returnToken").value=returnToken; 
         document.getElementById("status").textContent="Type verification token in TikTok chat!"; 
     }
+      else if (msg.type === "verifyFailed" && msg.reason === "not_following") {
+    // 🚫 User tried to verify but isn’t following
+    document.getElementById("status").textContent = "❌ You have not followed the creator. Please follow, then enter the code again.";
+    document.getElementById("palette-panel").style.display = "none";
+}
     else if(msg.type==="verified"){ 
         if(msg.session===currentSession){ 
             verified=true; username=msg.username; 
@@ -392,3 +397,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
