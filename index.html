@@ -156,36 +156,42 @@ function clampOffsets() {
 resetView();
 
 // --- Draw board ---
-function drawBoard(){
+function drawBoard() {
     ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
     ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
-    ctx.fillStyle="#fff"; ctx.fillRect(0,0,gridSize,gridSize);
 
-    for(let i=0;i<pixels.length;i++){
-        const px = pixels[i];
-        if(px){
-            const x=i%gridSize, y=Math.floor(i/gridSize);
-            if(px.color==="pfp" && px.pfp){
-                if(!pfpCache[px.user]){
-                    const img=new Image();
-                    img.src=px.pfp;
-                    pfpCache[px.user]=img;
+    // draw background
+    ctx.fillStyle = "#fff"; 
+    ctx.fillRect(0,0,gridSize,gridSize);
+
+    // draw pixels
+    for (let i = 0; i < pixels.length; i++) {
+        if (pixels[i]) {
+            const x = i % gridSize;
+            const y = Math.floor(i / gridSize);
+            const p = pixels[i];
+            if (p.pfp && p.color === "pfp") {
+                if (!pfpCache[p.user]) {
+                    const img = new Image();
+                    img.src = p.pfp;
+                    pfpCache[p.user] = img;
                 }
-                const img = pfpCache[px.user];
-                if(img.complete) ctx.drawImage(img, x, y, 1, 1);
+                ctx.drawImage(pfpCache[p.user], x, y, 1, 1);
             } else {
-                ctx.fillStyle = px.color;
-                ctx.fillRect(x,y,1,1);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(x, y, 1, 1);
             }
         }
     }
 
-    if(hoverX>=0 && hoverY>=0){
-        ctx.strokeStyle=selectedColor;
-        ctx.lineWidth=0.1;
+    // hover outline
+    if (hoverX >= 0 && hoverY >= 0) {
+        ctx.strokeStyle = selectedColor;
+        ctx.lineWidth = 0.1;
         ctx.strokeRect(hoverX, hoverY, 1, 1);
     }
 }
+
 
 // --- Canvas zoom & drag ---
 canvas.addEventListener("wheel", e=>{
@@ -311,3 +317,4 @@ drawBoard();
 </script>
 </body>
 </html>
+
