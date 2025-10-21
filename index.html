@@ -324,7 +324,7 @@ setInterval(()=>{
     let timeLeft = Math.max(0, Math.floor(nextPixelTime - now));
 
     if(timeLeft === 0 && pixelsLeft === 0){
-        pixelsLeft = 1; // allow user to place pixel
+        pixelsLeft = 0; // allow user to place pixel
     }
 
     updateUserInfo();
@@ -363,10 +363,14 @@ ws.onmessage = e=>{
         } 
     }
     else if(msg.type==="pixel"){ 
-        pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
-        if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+5; } 
-        drawBoard(); 
-    }
+    pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
+    if(msg.session === currentSession){ 
+        pixelsLeft = Math.max(0, pixelsLeft - 1); 
+        nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 30); // use backend value
+    } 
+    drawBoard(); 
+}
+
     else if(msg.type==="clear_user"){ 
         const removed=msg.sessionMap; 
         for(const idx in removed){ pixels[Number(idx)]=null; } 
@@ -423,6 +427,7 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
 
 
