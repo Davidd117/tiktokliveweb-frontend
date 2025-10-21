@@ -262,21 +262,22 @@ function updateUserInfo(){
     infoDiv.textContent=username?`Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`:`Not verified`;
 }
 
-setInterval(() => {
-    if (!verified || !nextPixelTime) return;
+setInterval(()=>{
+    if(!verified) return;
 
-    const now = Date.now() / 1000;
-    let timeLeft = Math.max(0, Math.floor(nextPixelTime - now));
+    const now = Date.now()/1000;
 
-    // If cooldown ended, replenish a pixel and restart cooldown
-    if (timeLeft === 0 && pixelsLeft === 0) {
-        pixelsLeft = 1;               // Give 1 pixel
-        nextPixelTime = now + 30;     // Restart cooldown immediately
-        timeLeft = 30;                // Optional: reset displayed cooldown
+    if(pixelsLeft < 10 && nextPixelTime){
+        let timeLeft = Math.floor(nextPixelTime - now);
+        if(timeLeft <= 0){
+            pixelsLeft = Math.min(10, pixelsLeft + 1);
+            nextPixelTime = pixelsLeft < 10 ? now + 30 : null; // pause if maxed
+        }
     }
 
     updateUserInfo();
 }, 1000);
+
 
 
 ws.onopen=()=>console.log("✅ WS connected!");
@@ -328,5 +329,6 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
 
