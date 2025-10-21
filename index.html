@@ -306,19 +306,31 @@ document.querySelectorAll("#colorPalette .color").forEach(c=>{
 function updateUserInfo(){
     const infoDiv = document.getElementById("userInfo");
     let timeLeft = 0;
-    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
+    if(nextPixelTime){
+        const now = Date.now() / 1000;
+        timeLeft = Math.max(0, Math.floor(nextPixelTime - now));
+    }
     infoDiv.textContent = username ? 
         `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
         : `Not verified`;
 }
 
+
 // --- Countdown ---
 setInterval(()=>{
     if(!verified || !nextPixelTime) return;
-    const now = Date.now()/1000;
-    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+30; }
+
+    const now = Date.now() / 1000;
+    let timeLeft = Math.max(0, Math.floor(nextPixelTime - now));
+
+    if(timeLeft === 0 && pixelsLeft === 0){
+        pixelsLeft = 1; // allow user to place pixel
+    }
+
     updateUserInfo();
 }, 1000);
+
+
 
 // --- WebSocket ---
 ws.onopen = ()=> console.log("✅ WS connected!");
@@ -411,6 +423,7 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
 
 
