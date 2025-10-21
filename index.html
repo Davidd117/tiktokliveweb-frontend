@@ -324,7 +324,7 @@ setInterval(()=>{
     let timeLeft = Math.max(0, Math.floor(nextPixelTime - now));
 
     if(timeLeft === 0 && pixelsLeft === 0){
-        pixelsLeft = 0; // allow user to place pixel
+        pixelsLeft = 1; // allow user to place pixel
     }
 
     updateUserInfo();
@@ -355,7 +355,7 @@ ws.onmessage = e=>{
         if(msg.session===currentSession){ 
             verified=true; username=msg.username; 
             pixelsLeft=msg.pixels_left ?? 1; 
-            nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5); 
+            nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+30); 
             returnToken=msg.return_token ?? returnToken; 
             document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`; 
             document.getElementById("returnToken").value=returnToken; 
@@ -427,6 +427,7 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
 
 
