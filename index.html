@@ -1,418 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>TikTok Live R/Place</title>
-<link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pixel Canvas</title>
+<style>
+  body {
+    background: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+  }
+  #canvas {
+    margin-top: 20px;
+    border: 2px solid white;
+    background: #222;
+  }
+  #cooldown {
+    margin-top: 15px;
+    font-size: 18px;
+  }
+</style>
 </head>
 <body>
-<h2>TikTok Live R/Place</h2>
+  <h1>🎨 Collaborative Pixel Canvas</h1>
+  <canvas id="canvas" width="500" height="500"></canvas>
+  <div id="cooldown">Cooldown: 0s</div>
+  <script>
+    const COOLDOWN = 30; // must match backend
+    const userId = "user_" + Math.floor(Math.random() * 100000);
+    const ws = new WebSocket("ws://localhost:8765");
 
-<div>
-  <button id="getTokenBtn">Generate Verification Token</button>
-</div>
-<div>
-  <label>Verification Token (copy to TikTok chat):</label>
-  <input type="text" id="verificationToken" readonly style="width:300px;">
-</div>
-<div>
-  <label>Return Token (save this for login):</label>
-  <input type="text" id="returnToken" readonly style="width:300px;">
-</div>
-<div>
-  <input type="text" id="usernameInput" placeholder="TikTok Username">
-  <input type="text" id="returnCodeInput" placeholder="Return Token">
-  <button id="returnLoginBtn">Return Login</button>
-</div>
+    let pixelsLeft = 1;
+    let nextPixelTime = 0;
 
-<div>
-  <h3>Live Follower Count</h3>
-  <iframe 
-      height="80px" 
-      width="300px" 
-      frameborder="0" 
-      src="https://livecounts.io/embed/tiktok-live-follower-counter/davidsworkshop" 
-      style="border: 0; width:300px; height:80px;">
+    const cooldownEl = document.getElementById("cooldown");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
 
-  </iframe>
-</div>
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "verify", user_id: userId }));
+    };
 
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
 
-<div id="status">Not verified</div>
-<div id="userInfo"></div>
-
-<div id="palette-panel">
-  <h3>🎨 Color Palette</h3>
-  <div class="colors" id="colorPalette">
-    <!-- Your colors -->
-    <div class="color selected" data-color="#6d001a" style="background:#6d001a;"></div>
-    <div class="color" data-color="#be0039" style="background:#be0039;"></div>
-    <div class="color" data-color="#ff4500" style="background:#ff4500;"></div>
-    <div class="color" data-color="#ffa800" style="background:#ffa800;"></div>
-    <div class="color" data-color="#ffd635" style="background:#ffd635;"></div>
-    <div class="color" data-color="#fff8b8" style="background:#fff8b8;"></div>
-    <div class="color" data-color="#00a368" style="background:#00a368;"></div>
-    <div class="color" data-color="#00cc78" style="background:#00cc78;"></div>
-    <div class="color" data-color="#7eed56" style="background:#7eed56;"></div>
-    <div class="color" data-color="#00756f" style="background:#00756f;"></div>
-    <div class="color" data-color="#009eaa" style="background:#009eaa;"></div>
-    <div class="color" data-color="#00ccc0" style="background:#00ccc0;"></div>
-    <div class="color" data-color="#2450a4" style="background:#2450a4;"></div>
-    <div class="color" data-color="#3690ea" style="background:#3690ea;"></div>
-    <div class="color" data-color="#51e9f4" style="background:#51e9f4;"></div>
-    <div class="color" data-color="#493ac1" style="background:#493ac1;"></div>
-    <div class="color" data-color="#6a5cff" style="background:#6a5cff;"></div>
-    <div class="color" data-color="#94b3ff" style="background:#94b3ff;"></div>
-    <div class="color" data-color="#811e9f" style="background:#811e9f;"></div>
-    <div class="color" data-color="#b44ac0" style="background:#b44ac0;"></div>
-    <div class="color" data-color="#e4abff" style="background:#e4abff;"></div>
-    <div class="color" data-color="#de107f" style="background:#de107f;"></div>
-    <div class="color" data-color="#ff3881" style="background:#ff3881;"></div>
-    <div class="color" data-color="#ff99aa" style="background:#ff99aa;"></div>
-    <div class="color" data-color="#6d482f" style="background:#6d482f;"></div>
-    <div class="color" data-color="#9c6926" style="background:#9c6926;"></div>
-    <div class="color" data-color="#ffb470" style="background:#ffb470;"></div>
-    <div class="color" data-color="#000000" style="background:#000000;"></div>
-    <div class="color" data-color="#515252" style="background:#515252;"></div>
-    <div class="color" data-color="#898d90" style="background:#898d90;"></div>
-    <div class="color" data-color="#d4d7d9" style="background:#d4d7d9;"></div>
-    <div class="color" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;"></div>
-    <!-- PFP option -->
-    <div class="color" id="pfpOption" data-color="pfp" style="background:linear-gradient(45deg,#4ce0ff,#ff4500); border:2px dashed #fff;" title="Place your TikTok PFP"></div>
-  </div>
-</div>
-
-<div id="canvasContainer">
-  <canvas id="canvas"></canvas>
-</div>
-
-<div>
-  <button id="adminLoginBtn">Admin Login</button>
-</div>
-<div id="adminPanel">
-  <input type="text" id="adminKeyInput" placeholder="Admin Key">
-  <button id="adminVerifyBtn">Verify Admin</button>
-  <div id="adminControls" style="display:none;">
-    <input type="text" id="adminUsername" placeholder="Username">
-    <button id="clearUserPixelsBtn">Clear User Pixels</button>
-    <button id="unverifyUserBtn">Unverify User</button>
-    <button id="clearAllBtn">Clear All Pixels</button>
-  </div>
-</div>
-
-
-
-<!-- Hover Panel -->
-<div id="hoverInfo">
-  <img id="hoverPfp" src="" alt="pfp">
-  <div id="hoverName"></div>
-</div>
-
-<script>
-const currentSession = 'session_' + Math.random().toString(36).substring(2, 10);
-const ws = new WebSocket("wss://tiktokliveweb-production.up.railway.app");
-
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const gridSize = 1000;
-const pixels = new Array(gridSize*gridSize);
-canvas.width = canvas.clientWidth;
-canvas.height = canvas.clientHeight;
-const pfpCache = {}; // store images by username
-
-
-let scale, minScale, offsetX, offsetY;
-let dragging=false, lastX=0, lastY=0;
-const dragThreshold = 5;
-
-let verified=false;
-let username=null;
-let pixelsLeft=0;
-let nextPixelTime=null;
-let returnToken=null;
-let verificationToken=null;
-let hoverX = -1;
-let hoverY = -1;
-let selectedColor = "#ff4500"; // default selected color
-
-// --- Selected color ---
-let activeColor = "#6d001a";
-
-// --- Canvas view ---
-function resetView(){
-    minScale = Math.min(canvas.width/gridSize, canvas.height/gridSize);
-    scale = minScale;
-    offsetX = (canvas.width - gridSize*scale)/2;
-    offsetY = (canvas.height - gridSize*scale)/2;
-}
-resetView();
-function clampOffsets(){
-    const maxOffsetX = 0, maxOffsetY=0;
-    const minOffsetX = canvas.width - gridSize*scale, minOffsetY = canvas.height - gridSize*scale;
-    if(offsetX>maxOffsetX) offsetX=maxOffsetX;
-    if(offsetY>maxOffsetY) offsetY=maxOffsetY;
-    if(offsetX<minOffsetX) offsetX=minOffsetX;
-    if(offsetY<minOffsetY) offsetY=minOffsetY;
-}
-function drawBoard() {
-    // Clear and scale canvas
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Compute cell size based on canvas and grid
-    const cellSizeX = canvas.width / gridSize;
-    const cellSizeY = canvas.height / gridSize;
-
-    // Draw all pixels
-    for (let i = 0; i < pixels.length; i++) {
-        const p = pixels[i];
-        if (!p) continue;
-
-        const x = i % gridSize;
-        const y = Math.floor(i / gridSize);
-
-        if (p.color === "pfp" && p.pfp) {
-            // Preload PFP if not cached
-            if (!pfpCache[p.user]) {
-                const img = new Image();
-                img.src = p.pfp;
-                pfpCache[p.user] = img;
-                img.onload = () => drawBoard(); // Redraw when loaded
-            }
-
-            const img = pfpCache[p.user];
-            if (img && img.complete) {
-                ctx.drawImage(img, x * cellSizeX, y * cellSizeY, cellSizeX, cellSizeY);
-            } else {
-                // Fallback color if image not loaded yet
-                ctx.fillStyle = "#ccc";
-                ctx.fillRect(x * cellSizeX, y * cellSizeY, cellSizeX, cellSizeY);
-            }
-        } else {
-            ctx.fillStyle = p.color;
-            ctx.fillRect(x * cellSizeX, y * cellSizeY, cellSizeX, cellSizeY);
+      if (msg.type === "user_update") {
+        pixelsLeft = msg.pixels_left ?? pixelsLeft;
+        if (msg.next_pixel_time) {
+          nextPixelTime = msg.next_pixel_time; // sync with backend timer
         }
-    }
+      }
 
-    // Draw hover outline
-    if (hoverX >= 0 && hoverY >= 0) {
-        ctx.strokeStyle = selectedColor;
-        ctx.lineWidth = Math.max(cellSizeX, cellSizeY) * 0.05; // small thickness relative to cell
-        ctx.strokeRect(hoverX * cellSizeX, hoverY * cellSizeY, cellSizeX, cellSizeY);
-    }
-}
+      if (msg.type === "canvas_update") {
+        const x = msg.x ?? Math.floor(Math.random() * 50);
+        const y = msg.y ?? Math.floor(Math.random() * 50);
+        ctx.fillStyle = "lime";
+        ctx.fillRect(x * 10, y * 10, 10, 10);
+      }
+    };
 
+    // Countdown display
+    setInterval(() => {
+      const now = Date.now() / 1000;
+      const remaining = Math.max(0, Math.ceil(nextPixelTime - now));
 
-canvas.addEventListener("wheel", e=>{
-    e.preventDefault();
-    const mouseX=(e.offsetX-offsetX)/scale;
-    const mouseY=(e.offsetY-offsetY)/scale;
-    const zoom=e.deltaY<0?1.1:0.9;
-    scale*=zoom;
-    scale=Math.min(Math.max(scale,minScale),40);
-    offsetX=e.offsetX - mouseX*scale;
-    offsetY=e.offsetY - mouseY*scale;
-    clampOffsets();
-    drawBoard();
-});
+      if (remaining > 0) {
+        cooldownEl.textContent = `⏳ Cooldown: ${remaining}s`;
+      } else {
+        cooldownEl.textContent = `✅ Pixel Ready (${pixelsLeft} available)`;
+      }
+    }, 500);
 
+    // Place pixel on click
+    canvas.addEventListener("click", () => {
+      const now = Date.now() / 1000;
 
+      if (now < nextPixelTime) {
+        alert(`Please wait ${Math.ceil(nextPixelTime - now)} seconds.`);
+        return;
+      }
 
+      if (pixelsLeft <= 0) {
+        alert("No pixels left right now!");
+        return;
+      }
 
+      const x = Math.floor(Math.random() * 50);
+      const y = Math.floor(Math.random() * 50);
 
-canvas.addEventListener("mousedown", e=>{
-    if(e.button===0){ lastX=e.clientX; lastY=e.clientY; dragging=false; }
+      ws.send(JSON.stringify({
+        type: "place_pixel",
+        user_id: userId,
+        x: x,
+        y: y
+      }));
 
-});
-
-canvas.addEventListener("mousemove", e => {
-
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left - offsetX) / scale);
-    const y = Math.floor((e.clientY - rect.top - offsetY) / scale);
-    
-
-    // Clamp to grid
-    hoverX = Math.max(0, Math.min(gridSize - 1, x));
-    hoverY = Math.max(0, Math.min(gridSize - 1, y));
-
-    const index = hoverY * gridSize + hoverX;
-    const pixel = pixels[index];
-
-    // Hover panel
-    const hoverPanel = document.getElementById("hoverInfo");
-    const hoverPfp = document.getElementById("hoverPfp");
-    const hoverName = document.getElementById("hoverName");
-
-    if(pixel && pixel.user){
-        hoverPanel.style.display = "block";
-        hoverPanel.style.left = (e.pageX + 10) + "px";
-        hoverPanel.style.top = (e.pageY + 10) + "px";
-        hoverPfp.src = pixel.pfp || `https://www.tiktok.com/@${pixel.user}/avatar`;
-        hoverName.textContent = pixel.user;
-    } else {
-        hoverPanel.style.display = "none";
-    }
-
-    // Dragging
-    if(e.buttons === 1){
-        if(Math.abs(e.clientX - lastX) > dragThreshold || Math.abs(e.clientY - lastY) > dragThreshold) dragging = true;
-        if(dragging){
-            offsetX += e.clientX - lastX;
-            offsetY += e.clientY - lastY;
-            lastX = e.clientX;
-            lastY = e.clientY;
-            clampOffsets();
-        }
-    }
-
-    drawBoard(); // redraw board with hover outline
-});
-
-
-canvas.addEventListener("mouseleave", () => {
-    hoverX = -1;
-    hoverY = -1;
-    
-    drawBoard();
-});
-
-
-canvas.addEventListener("mouseup", e=>{
-    if(!dragging){
-        if(!verified){ alert("Not verified!"); return; }
-        if(pixelsLeft<=0){ alert("No pixels available!"); return; }
-        const x=Math.floor((e.offsetX-offsetX)/scale);
-        const y=Math.floor((e.offsetY-offsetY)/scale);
-        if(x>=0 && y>=0 && x<gridSize && y<gridSize){
-            ws.send(JSON.stringify({action:"place_pixel", session:currentSession, index:x+y*gridSize, color:activeColor}));
-        }
-    }
-    dragging=false;
-});
-
-// --- Color selection ---
-document.querySelectorAll("#colorPalette .color").forEach(c=>{
-    c.addEventListener("click", ()=>{
-        document.querySelectorAll("#colorPalette .color").forEach(cl=>cl.classList.remove("selected"));
-        c.classList.add("selected");
-        activeColor = c.getAttribute("data-color");
-        selectedColor = c.getAttribute("data-color"); // FIXED: use 'c', not 'swatch'
+      pixelsLeft--;
+      nextPixelTime = now + COOLDOWN; // set local cooldown fallback
     });
-});
-
-
-// --- User info ---
-function updateUserInfo(){
-    const infoDiv = document.getElementById("userInfo");
-    let timeLeft = 0;
-    if(nextPixelTime) timeLeft = Math.max(0, Math.floor(nextPixelTime - Date.now()/1000));
-    infoDiv.textContent = username ? 
-        `Welcome back ${username} | Pixels left: ${pixelsLeft} | Cooldown: ${timeLeft}s`
-        : `Not verified`;
-}
-
-// --- Countdown ---
-setInterval(()=>{
-    if(!verified || !nextPixelTime) return;
-    const now = Date.now()/1000;
-    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+30; }
-    updateUserInfo();
-}, 1000);
-
-// --- WebSocket ---
-ws.onopen = ()=> console.log("✅ WS connected!");
-ws.onmessage = e=>{
-    const msg = JSON.parse(e.data);
-    if(msg.type==="init_pixels"){ 
-        for(const idx in msg.pixels){ pixels[idx] = msg.pixels[idx]; }
-        drawBoard(); 
-    }
-    else if(msg.type==="token"){ 
-        verificationToken=msg.token; returnToken=msg.return_token; 
-        document.getElementById("verificationToken").value=verificationToken; 
-        document.getElementById("returnToken").value=returnToken; 
-        document.getElementById("status").textContent="Type verification token in TikTok chat!"; 
-    }
-      else if (msg.type === "verifyFailed" && msg.reason === "not_following") {
-    // 🚫 User tried to verify but isn’t following
-    document.getElementById("status").textContent = "❌ You have not followed the creator. Please follow, then enter the code again.";
-    document.getElementById("palette-panel").style.display = "none";
-}
-    else if(msg.type==="verified"){ 
-        if(msg.session===currentSession){ 
-            verified=true; username=msg.username; 
-            pixelsLeft=msg.pixels_left ?? 1; 
-            nextPixelTime=msg.next_pixel_time ?? (Date.now()/1000+5); 
-            returnToken=msg.return_token ?? returnToken; 
-            document.getElementById("status").textContent=`VERIFIED! Welcome ${username}`; 
-            document.getElementById("returnToken").value=returnToken; 
-            document.getElementById("palette-panel").style.display="block"; 
-        } 
-    }
-    else if(msg.type==="pixel"){ 
-        pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
-        if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+5; } 
-        drawBoard(); 
-    }
-    else if(msg.type==="clear_user"){ 
-        const removed=msg.sessionMap; 
-        for(const idx in removed){ pixels[Number(idx)]=null; } 
-        drawBoard(); 
-    }
-    else if(msg.type==="clear_all"){
-        const removed = msg.sessionMap;
-        for(const idx in removed){ pixels[Number(idx)] = null; }
-        drawBoard();
-    }
-    else if(msg.type==="error"){ if(msg.session===undefined || msg.session===currentSession) alert(msg.message); }
-};
-
-// --- Generate token ---
-document.getElementById("getTokenBtn").addEventListener("click", ()=> ws.send(JSON.stringify({action:"get_token", session:currentSession})));
-
-// --- Return login ---
-document.getElementById("returnLoginBtn").addEventListener("click", ()=>{
-    const uname=document.getElementById("usernameInput").value.trim();
-    const rtoken=document.getElementById("returnCodeInput").value.trim();
-    if(!uname||!rtoken) return alert("Enter username and return token");
-    ws.send(JSON.stringify({action:"verify", username:uname, token:rtoken, session:currentSession}));
-});
-
-// --- Admin ---
-document.getElementById("adminLoginBtn").addEventListener("click", ()=> document.getElementById("adminPanel").style.display="block");
-document.getElementById("adminVerifyBtn").addEventListener("click", ()=>{
-    const key=document.getElementById("adminKeyInput").value.trim();
-    if(!key) return alert("Enter admin key");
-    ws.send(JSON.stringify({action:"admin", key:key, command:"check", session:currentSession}));
-});
-ws.addEventListener("message", e=>{
-    const msg=JSON.parse(e.data);
-    if(msg.type==="info" && msg.message==="Admin key correct"){ document.getElementById("adminControls").style.display="block"; alert("Admin verified!"); }
-    else if(msg.type==="error" && msg.message==="Invalid admin key"){ alert("Invalid admin key!"); document.getElementById("adminControls").style.display="none"; }
-});
-document.getElementById("clearUserPixelsBtn").addEventListener("click", ()=>{
-    const target=document.getElementById("adminUsername").value.trim();
-    if(!target) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear_user", target}));
-});
-document.getElementById("unverifyUserBtn").addEventListener("click", ()=>{
-    const target=document.getElementById("adminUsername").value.trim();
-    if(!target) return alert("Enter username");
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"unverify", target}));
-});
-document.getElementById("clearAllBtn").addEventListener("click", ()=>{
-    ws.send(JSON.stringify({action:"admin", key:document.getElementById("adminKeyInput").value, command:"clear"}));
-});
-
-
-
-drawBoard();
-</script>
+  </script>
 </body>
 </html>
-
-
-
-
-
