@@ -154,54 +154,40 @@ function clampOffsets(){
     if(offsetX<minOffsetX) offsetX=minOffsetX;
     if(offsetY<minOffsetY) offsetY=minOffsetY;
 }
-function drawBoard() {
-    // Clear and scale canvas
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+function drawBoard(){
+    ctx.setTransform(scale,0,0,scale,offsetX,offsetY);
+    ctx.clearRect(-offsetX/scale,-offsetY/scale,canvas.width/scale,canvas.height/scale);
+    ctx.fillStyle="#fff"; 
+    ctx.fillRect(0,0,gridSize,gridSize);
+    //ctx.imageSmoothingEnabled = true;
 
-    // Compute cell size based on canvas and grid
-    const cellSizeX = canvas.width / gridSize;
-    const cellSizeY = canvas.height / gridSize;
-
-    // Draw all pixels
-    for (let i = 0; i < pixels.length; i++) {
-        const p = pixels[i];
-        if (!p) continue;
-
-        const x = i % gridSize;
-        const y = Math.floor(i / gridSize);
-
-        if (p.color === "pfp" && p.pfp) {
-            // Preload PFP if not cached
-            if (!pfpCache[p.user]) {
-                const img = new Image();
-                img.src = p.pfp;
-                pfpCache[p.user] = img;
-                img.onload = () => drawBoard(); // Redraw when loaded
-            }
-
-            const img = pfpCache[p.user];
-            if (img && img.complete) {
-                ctx.drawImage(img, x * cellSizeX, y * cellSizeY, cellSizeX, cellSizeY);
+    // draw existing pixels
+    for(let i=0;i<pixels.length;i++){
+        if(pixels[i]){
+            const x=i%gridSize, y=Math.floor(i/gridSize);
+            if(pixels[i].color==="pfp" && pixels[i].pfp){
+                if(!pfpCache[pixels[i].user]){
+                    const img = new Image();
+                    img.src = pixels[i].pfp;
+                    pfpCache[pixels[i].user] = img;
+                }
+                ctx.drawImage(pfpCache[pixels[i].user], x, y, 1, 1);
             } else {
-                // Fallback color if image not loaded yet
-                ctx.fillStyle = "#ccc";
-                ctx.fillRect(x * cellSizeX, y * cellSizeY, cellSizeX, cellSizeY);
+                ctx.fillStyle=pixels[i].color;
+                ctx.fillRect(x,y,1.0,1.0);
             }
-        } else {
-            ctx.fillStyle = p.color;
-            ctx.fillRect(x * cellSizeX, y * cellSizeY, cellSizeX, cellSizeY);
         }
     }
 
+    // draw hover outline
     // Draw hover outline
-    if (hoverX >= 0 && hoverY >= 0) {
+    if(hoverX >= 0 && hoverY >= 0){
         ctx.strokeStyle = selectedColor;
-        ctx.lineWidth = Math.max(cellSizeX, cellSizeY) * 0.05; // small thickness relative to cell
-        ctx.strokeRect(hoverX * cellSizeX, hoverY * cellSizeY, cellSizeX, cellSizeY);
+        ctx.lineWidth = 0.1; // adjust thickness as needed
+        ctx.strokeRect(hoverX, hoverY, 1, 1);
     }
-}
 
+}
 
 canvas.addEventListener("wheel", e=>{
     e.preventDefault();
@@ -315,7 +301,6 @@ function updateUserInfo(){
         : `Not verified`;
 }
 
-
 // --- Countdown ---
 setInterval(()=>{
     if(!verified || !nextPixelTime) return;
@@ -329,8 +314,6 @@ setInterval(()=>{
 
     updateUserInfo();
 }, 1000);
-
-
 
 // --- WebSocket ---
 ws.onopen = ()=> console.log("✅ WS connected!");
@@ -346,11 +329,6 @@ ws.onmessage = e=>{
         document.getElementById("returnToken").value=returnToken; 
         document.getElementById("status").textContent="Type verification token in TikTok chat!"; 
     }
-      else if (msg.type === "verifyFailed" && msg.reason === "not_following") {
-    // 🚫 User tried to verify but isn’t following
-    document.getElementById("status").textContent = "❌ You have not followed the creator. Please follow, then enter the code again.";
-    document.getElementById("palette-panel").style.display = "none";
-}
     else if(msg.type==="verified"){ 
         if(msg.session===currentSession){ 
             verified=true; username=msg.username; 
@@ -363,14 +341,10 @@ ws.onmessage = e=>{
         } 
     }
     else if(msg.type==="pixel"){ 
-    pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
-    if(msg.session === currentSession){ 
-        pixelsLeft = Math.max(0, pixelsLeft - 1); 
-        nextPixelTime = msg.next_pixel_time ?? (Date.now()/1000 + 30); // use backend value
-    } 
-    drawBoard(); 
-}
-
+        pixels[msg.index] = { color: msg.color, user: msg.user, pfp: msg.pfp }; 
+        if(msg.session===currentSession){ pixelsLeft=Math.max(0,pixelsLeft-1); nextPixelTime=Date.now()/1000+30; } 
+        drawBoard(); 
+    }
     else if(msg.type==="clear_user"){ 
         const removed=msg.sessionMap; 
         for(const idx in removed){ pixels[Number(idx)]=null; } 
@@ -427,10 +401,3 @@ drawBoard();
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
