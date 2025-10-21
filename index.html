@@ -316,7 +316,7 @@ function updateUserInfo(){
 setInterval(()=>{
     if(!verified || !nextPixelTime) return;
     const now = Date.now()/1000;
-    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+COOLDOWN; }
+    if(now >= nextPixelTime){ pixelsLeft++; nextPixelTime=now+30; }
     updateUserInfo();
 }, 1000);
 
@@ -411,5 +411,6 @@ drawBoard();
 </script>
 </body>
 </html>
+
 
 
